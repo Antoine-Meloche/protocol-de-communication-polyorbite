@@ -245,5 +245,18 @@ pub fn pack_to_ax25(data: String) -> Packet {
 
     let payload_bytes_length: u128 = ceil_div(packet.payload.length as u128, 8);
 
+    // TODO: create [u8; payload_bytes_length] array with the bytes of the payload string.
+
+    let bytes: [u8; 16+payload_bytes_length] = {
+        let mut temp: [u8; 7] = [0u8; 16+payload_bytes_length];
+        temp[0..7] = packet.dest_addr.bytes;
+        temp[7..14] = packet.source_addr.bytes;
+        temp[14] = packet.control.byte; // if the control frame is not modulo 128
+        temp[15] = packet.pid.byte;
+        temp[16..]copy_from_slice(&payload_bytes);
+
+        temp
+    };
+
     return packet;
 }
