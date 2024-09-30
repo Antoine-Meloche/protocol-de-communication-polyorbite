@@ -1,5 +1,5 @@
 pub fn str_to_6_u8_array(string: &str) -> [u8; 6] {
-    let string_formatted = format!("{: >8}", string);
+    let string_formatted = format!("{: >6}", string);
     let bytes = string_formatted.as_bytes();
 
     if bytes.len() != 6 {
@@ -13,5 +13,5 @@ pub fn str_to_6_u8_array(string: &str) -> [u8; 6] {
 }
 
 pub fn ceil_div(a: u128, b: u128) -> u128 {
-    return a / b + (((a % b != 0) as u128));
+    return a / b + ((a % b != 0) as u128);
 }

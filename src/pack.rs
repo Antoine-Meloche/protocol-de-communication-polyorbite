@@ -21,7 +21,10 @@ impl Address {
 
         let callsign_bytes: [u8; 6] = str_to_6_u8_array(callsign);
 
-        let ssid_byte: u8 = (ssid << 1) | 0b01100000 | (last_addr as u8) | ((((!command & !last_addr) | ((command & last_addr))) as u8) << 7);
+        let ssid_byte: u8 = (ssid << 1)
+            | 0b01100000
+            | (last_addr as u8)
+            | ((((!command & !last_addr) | (command & last_addr)) as u8) << 7);
 
         let bytes: [u8; 7] = {
             let mut temp: [u8; 7] = [0u8; 7];
@@ -61,13 +64,13 @@ pub enum Control {
         recv_seq_num: u8, // 7 bits
         poll: bool,       // 1 bit
         send_seq_num: u8, // 7 bits
-        bytes: u16,       // fully constructed i frame modulo 128 control bytes
+        bytes: [u8; 2],   // fully constructed i frame modulo 128 control bytes
     },
     SFrame128 {
         recv_seq_num: u8, // 7 bits
         poll_final: bool, // 1 bit
         supervisory: u8,  // 2 bits
-        bytes: u16,       // fully constructed s frame modulo 128 control bytes
+        bytes: [u8; 2],   // fully constructed s frame modulo 128 control bytes
     },
 }
 
@@ -143,10 +146,9 @@ impl Control {
             "The send sequence number must not be more than 127"
         );
 
-        let poll_bit: u16 = poll as u16;
+        let poll_bit: u8 = poll as u8;
 
-        let bytes: u16 =
-            ((recv_seq_num as u16) << 9) | (poll_bit << 8) | ((send_seq_num as u16) << 1) | 0b0;
+        let bytes: [u8; 2] = [(recv_seq_num << 1) | poll_bit, (send_seq_num << 1) | 0b0];
 
         return Control::IFrame128 {
             recv_seq_num: recv_seq_num,
@@ -166,13 +168,12 @@ impl Control {
             "The supervisory number must not be more than 3"
         );
 
-        let poll_final_bit: u16 = poll_final as u16;
+        let poll_final_bit: u8 = poll_final as u8;
 
-        let bytes: u16 = ((recv_seq_num as u16) << 9)
-            | (poll_final_bit << 8)
-            | 0b0000
-            | ((supervisory as u16) << 2)
-            | 0b01;
+        let bytes: [u8; 2] = [
+            (recv_seq_num << 1) | poll_final_bit,
+            0b0000 | (supervisory << 2) | 0b01,
+        ];
 
         return Control::SFrame128 {
             recv_seq_num: recv_seq_num,
@@ -183,6 +184,7 @@ impl Control {
     }
 }
 
+#[derive(Copy, Clone)]
 #[repr(u8)]
 enum Pid {
     ISO8208 = 0x01,
@@ -231,32 +233,55 @@ pub fn pack_to_ax25(data: String) -> Packet {
 
     let control: Control = Control::new_iframe(1, true, 2);
 
-    let pid: Pid = Pid::NoL3;
-
     let payload: Payload = Payload::new(data);
 
     let packet: Packet = Packet {
         dest_addr: dest_addr,
         source_addr: source_addr,
         control: control,
-        pid: pid,
+        pid: Pid::NoL3,
         payload: payload,
     };
 
-    let payload_bytes_length: u128 = ceil_div(packet.payload.length as u128, 8);
+    let payload_bytes_length: usize = ceil_div(packet.payload.length as u128, 8) as usize;
+    let payload_bytes: Vec<u8> = vec![0u8; payload_bytes_length];
 
-    // TODO: create [u8; payload_bytes_length] array with the bytes of the payload string.
+    let min_length: usize = match packet.control {
+        Control::IFrame { .. } => 16,
+        Control::SFrame { .. } => 16,
+        Control::UFrame { .. } => 16,
 
-    let bytes: [u8; 16+payload_bytes_length] = {
-        let mut temp: [u8; 7] = [0u8; 16+payload_bytes_length];
-        temp[0..7] = packet.dest_addr.bytes;
-        temp[7..14] = packet.source_addr.bytes;
-        temp[14] = packet.control.byte; // if the control frame is not modulo 128
-        temp[15] = packet.pid.byte;
-        temp[16..]copy_from_slice(&payload_bytes);
+        Control::IFrame128 { .. } => 17,
+        Control::SFrame128 { .. } => 17,
 
-        temp
+        _ => unreachable!("There is an unknown control frame"),
     };
+
+    let mut bytes: Vec<u8> = Vec::with_capacity(min_length + payload_bytes_length);
+    bytes.extend_from_slice(&packet.dest_addr.bytes);
+    bytes.extend_from_slice(&packet.source_addr.bytes);
+
+    match packet.control {
+        Control::IFrame { byte, .. } => bytes.push(byte),
+        Control::SFrame { byte, .. } => bytes.push(byte),
+        Control::UFrame { byte, .. } => bytes.push(byte),
+
+        Control::IFrame128 {
+            bytes: control_bytes,
+            ..
+        } => bytes.extend_from_slice(&control_bytes),
+        Control::SFrame128 {
+            bytes: control_bytes,
+            ..
+        } => bytes.extend_from_slice(&control_bytes),
+
+        _ => unreachable!("There is an unknown control frame"),
+    };
+
+    bytes.push(packet.pid as u8);
+    bytes.extend_from_slice(&payload_bytes);
+
+    println!("{:?}", bytes);
 
     return packet;
 }
