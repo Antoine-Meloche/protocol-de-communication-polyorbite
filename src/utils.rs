@@ -11,7 +11,3 @@ pub fn str_to_6_u8_array(string: &str) -> [u8; 6] {
 
     return array;
 }
-
-pub fn ceil_div(a: u128, b: u128) -> u128 {
-    return a / b + ((a % b != 0) as u128);
-}

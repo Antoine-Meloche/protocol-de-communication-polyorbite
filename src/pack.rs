@@ -1,4 +1,4 @@
-use crate::utils::{ceil_div, str_to_6_u8_array};
+use crate::utils::str_to_6_u8_array;
 
 pub struct Address {
     callsign: [u8; 6],
@@ -243,8 +243,8 @@ pub fn pack_to_ax25(data: String) -> Packet {
         payload: payload,
     };
 
-    let payload_bytes_length: usize = ceil_div(packet.payload.length as u128, 8) as usize;
-    let payload_bytes: Vec<u8> = vec![0u8; payload_bytes_length];
+    let payload_bytes_length: usize = packet.payload.length as usize;
+    let payload_bytes = packet.payload.data.as_bytes();
 
     let min_length: usize = match packet.control {
         Control::IFrame { .. } => 16,
