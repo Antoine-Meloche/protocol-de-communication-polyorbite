@@ -1,7 +1,7 @@
 use crate::utils::str_to_6_u8_array;
 
 pub struct Address {
-    callsign: [u8; 6],
+    callsign: String,
     ssid: u8, // MAX 4 bits
     bytes: [u8; 7],
 }
@@ -24,7 +24,7 @@ impl Address {
         let ssid_byte: u8 = (ssid << 1)
             | 0b01100000
             | (last_addr as u8)
-            | ((((!command & !last_addr) | (command & last_addr)) as u8) << 7);
+            | (((command ^ last_addr) as u8) << 7);
 
         let bytes: [u8; 7] = {
             let mut temp: [u8; 7] = [0u8; 7];
@@ -34,7 +34,7 @@ impl Address {
         };
 
         return Address {
-            callsign: callsign_bytes,
+            callsign: callsign.into(),
             ssid: ssid,
             bytes: bytes,
         };
