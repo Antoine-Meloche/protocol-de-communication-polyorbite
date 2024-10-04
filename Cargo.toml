@@ -18,11 +18,11 @@ pyo3 = "0.22.0"
 
 [[bin]]
 name = "cubesat"
-path = "src/main.rs"
+path = "src/lib.rs"
 
 [target.'cfg(feature = "cubesat")'.bin]
 name = "cubesat"
-path = "src/main.rs"
+path = "src/lib.rs"
 
 [profile.release]
 strip = true
