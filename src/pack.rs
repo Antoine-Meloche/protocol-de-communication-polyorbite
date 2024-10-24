@@ -358,15 +358,16 @@ impl Packet {
         let payload_bytes = payload.data.as_bytes();
         
         let min_length: usize = match control {
-            Control::IFrame { .. } => 16,
-            Control::SFrame { .. } => 16,
-            Control::UFrame { .. } => 16,
+            Control::IFrame { .. } => 18,
+            Control::SFrame { .. } => 18,
+            Control::UFrame { .. } => 18,
             
-            Control::IFrame128 { .. } => 17,
-            Control::SFrame128 { .. } => 17,
+            Control::IFrame128 { .. } => 19,
+            Control::SFrame128 { .. } => 19,
         };
         
         let mut bytes: Vec<u8> = Vec::with_capacity(min_length + payload_bytes_length);
+        bytes.push(0x7E); // AX.25 opening flag
         bytes.extend_from_slice(&dest_addr.bytes);
         bytes.extend_from_slice(&source_addr.bytes);
         
@@ -387,9 +388,9 @@ impl Packet {
         
         bytes.push(pid as u8);
         bytes.extend_from_slice(&payload_bytes);
+
+        bytes.push(0x7E); // AX.25 closing flag
         
-        println!("{:?}", bytes);
-    
         let packet: Packet = Packet {
             dest_addr: dest_addr,
             source_addr: source_addr,
@@ -405,20 +406,26 @@ impl Packet {
     pub fn pack_to_fx25(ax25_packet: Packet) -> Vec<u8> {
         let mut bytes: Vec<u8> = Vec::new();
 
-        bytes.push(0x7E);
+        bytes.push(0x7E); // FX.25 Opening flags
         bytes.push(0x7E);
         bytes.push(0x7E);
         bytes.push(0x7E);
 
         bytes.extend(CorrelationTag::Tag09.to_bytes());
 
-        bytes.push(0x7E);
-        bytes.extend(ax25_packet.bytes);
-        bytes.push(0x7E);
+        let mut packet_bytes: Vec<u8> = Vec::new();
 
-        // Parity check
+        packet_bytes.extend(ax25_packet.bytes);
+        packet_bytes.resize(191, 0x7E); // Add padding
 
-        bytes.push(0x7E);
+        // Parity check RS(255, 191)
+        // let parity_bytes: [u8; 32] = reed_solomon::rs255_191(packet_bytes);
+        let parity_bytes: [u8; 32] = [0; 32];
+
+        bytes.extend(packet_bytes);
+        bytes.extend(parity_bytes);
+
+        bytes.push(0x7E); // FX.25 Closing flags
         bytes.push(0x7E);
         bytes.push(0x7E);
         bytes.push(0xFE);
