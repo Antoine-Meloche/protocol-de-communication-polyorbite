@@ -1,7 +1,6 @@
 #[cfg(ground_station)]
 use pyo3::prelude::*;
 mod pack;
-
 mod utils;
 
 /// Formats the sum of two numbers as string.
@@ -18,3 +17,6 @@ fn comms(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod test;

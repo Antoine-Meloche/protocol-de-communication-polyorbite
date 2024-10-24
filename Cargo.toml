@@ -8,24 +8,25 @@ default = []
 ground-station = []
 cubesat = []
 
-[target.'cfg(feature = "ground-station")'.lib]
+[lib]
 name = "comms"
 path = "src/lib.rs"
 crate-type = ["cdylib"]
 
+[[bin]]
+name = "cubesat"
+path = "src/main.rs"
+required-features = ["cubesat"]
+
 [target.'cfg(feature = "ground-station")'.dependencies]
 pyo3 = "0.22.0"
 
-[[bin]]
-name = "cubesat"
-path = "src/lib.rs"
-
-[target.'cfg(feature = "cubesat")'.bin]
-name = "cubesat"
-path = "src/lib.rs"
 
 [profile.release]
 strip = true
 opt-level = "z"
 lto = true
 codegen-units = 1
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ground_station)'] }
