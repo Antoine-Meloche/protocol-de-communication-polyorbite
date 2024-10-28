@@ -1,5 +1,3 @@
-use crate::utils::str_to_6_u8_array;
-
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
 /// 
 /// # Fields
@@ -11,15 +9,15 @@ use crate::utils::str_to_6_u8_array;
 /// 
 /// # Example
 /// ```
-/// let addr = Address::new("NOCALL".to_string(), 0, true, false);
+/// let addr = Address::new("NOCALL", 0, true, false);
 /// ```
-pub struct Address {
-    callsign: String,
-    ssid: u8, // MAX 4 bits
-    bytes: [u8; 7],
+pub struct Address<'a> {
+    pub callsign: &'a str,
+    pub ssid: u8, // MAX 4 bits
+    pub bytes: [u8; 7],
 }
 
-impl Address {
+impl<'a> Address<'a> {
     /// A function to create an AX.25 adress from a callsign and an ssid.
     /// 
     /// # Fields
@@ -33,36 +31,40 @@ impl Address {
     /// ```
     /// let addr = Address::new("NOCALL".to_string(), 0, true, false);
     /// ```
-    pub fn new(callsign: String, ssid: u8, command: bool, last_addr: bool) -> Self {
+    pub fn new(callsign: &'a str, ssid: u8, command: bool, last_addr: bool) -> Self {
         if callsign.chars().count() > 6 {
-            panic!("The callsign cannot be longer than 6 characters");
+            // panic!("The callsign cannot be longer than 6 characters"); // FIXME: remove panic!
         }
 
         if ssid > 15 {
-            panic!(
-                "The destination SSID is larger than the allowed amount (15): {} > 15",
-                ssid
-            );
+            // panic!(
+            //     "The destination SSID is larger than the allowed amount (15): {} > 15",
+            //     ssid
+            // ); // FIXME: remove panic!
         }
 
-        let callsign_bytes: [u8; 6] = str_to_6_u8_array(&callsign);
+        let mut callsign_bytes: [u8; 6] = [32; 6];
+        for (i, char) in callsign.chars().enumerate() {
+            callsign_bytes[i] = char as u8;
+        }
+
+        for i in 0..callsign_bytes.len() {
+            callsign_bytes[i] <<= 1;
+        }
 
         let ssid_byte: u8 = (ssid << 1)
             | 0b01100000
             | (last_addr as u8)
             | (((command ^ last_addr) as u8) << 7);
 
-        let bytes: [u8; 7] = {
-            let mut temp: [u8; 7] = [0u8; 7];
-            temp[..6].copy_from_slice(&callsign_bytes);
-            temp[6] = ssid_byte;
-            temp
-        };
+        let bytes: Bytes<7> = Bytes::<7>::new();
+        bytes.extend(&callsign_bytes);
+        bytes.push(ssid_byte);
 
         return Address {
             callsign: callsign,
             ssid: ssid,
-            bytes: bytes,
+            bytes: bytes.bytes,
         };
     }
 }
@@ -93,18 +95,18 @@ pub enum Control {
         byte: u8,         // fully constructed u frame control byte
     },
 
-    IFrame128 {
-        recv_seq_num: u8, // 7 bits
-        poll: bool,       // 1 bit
-        send_seq_num: u8, // 7 bits
-        bytes: [u8; 2],   // fully constructed i frame modulo 128 control bytes
-    },
-    SFrame128 {
-        recv_seq_num: u8, // 7 bits
-        poll_final: bool, // 1 bit
-        supervisory: u8,  // 2 bits
-        bytes: [u8; 2],   // fully constructed s frame modulo 128 control bytes
-    },
+    // IFrame128 { // FIXME: non functional because of fixed bytes length of packet
+    //     recv_seq_num: u8, // 7 bits
+    //     poll: bool,       // 1 bit
+    //     send_seq_num: u8, // 7 bits
+    //     bytes: [u8; 2],   // fully constructed i frame modulo 128 control bytes
+    // },
+    // SFrame128 {
+    //     recv_seq_num: u8, // 7 bits
+    //     poll_final: bool, // 1 bit
+    //     supervisory: u8,  // 2 bits
+    //     bytes: [u8; 2],   // fully constructed s frame modulo 128 control bytes
+    // },
 }
 
 impl Control {
@@ -120,7 +122,7 @@ impl Control {
     /// ```
     /// let control = Control::new_iframe(1, false, 0);
     /// ```
-    fn new_iframe(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
+    pub fn new_iframe(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
         assert!(
             recv_seq_num < 8,
             "The receive sequence number must not be more than 7"
@@ -130,9 +132,9 @@ impl Control {
             "The send sequence number must not be more than 7"
         );
 
-        let poll_bit = poll as u8;
+        let poll_bit: u8 = poll as u8;
 
-        let byte = (recv_seq_num << 5) | (poll_bit << 4) | (send_seq_num << 1) | 0b0;
+        let byte: u8 = (recv_seq_num << 5) | (poll_bit << 4) | (send_seq_num << 1) | 0b0;
 
         return Control::IFrame {
             recv_seq_num: recv_seq_num,
@@ -156,7 +158,7 @@ impl Control {
     /// ```
     /// let control = Control::new_sframe(1, true, 0);
     /// ```
-    fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
+    pub fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
         assert!(
             recv_seq_num < 8,
             "The receive sequence number must not be more than 7"
@@ -189,7 +191,7 @@ impl Control {
     /// ```
     /// let control = Control::new_uframe(0, true);
     /// ```
-    fn new_uframe(frame_mod: u8, poll_final: bool) -> Self {
+    pub fn new_uframe(frame_mod: u8, poll_final: bool) -> Self {
         assert!(frame_mod < 31, "The frame mod must not be more than 31");
 
         let poll_final_bit: u8 = poll_final as u8;
@@ -206,79 +208,79 @@ impl Control {
         };
     }
 
-    /// A function to create a modulo 128 IFrame AX.25 control field
-    /// 
-    /// # Fields
-    /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
-    /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
-    /// - `send_seq_num`: The send sequence number is a 7 bit integer. This number represents the place within the sending order of packets this packet sits to help with assembly of packets at reception
-    /// 
-    /// # Example
-    /// Here is an example of a modulo 128 IFrame control field being created for an informational frame that is the first packet being sent, does not require an immediate response and the next frame to be sent will have the send sequence number of 1
-    /// ```
-    /// let control = Control::new_iframe128(1, false, 0);
-    /// ```
-    fn new_iframe128(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
-        assert!(
-            recv_seq_num < 128,
-            "The receive sequence number must not be more than 127"
-        );
-        assert!(
-            send_seq_num < 128,
-            "The send sequence number must not be more than 127"
-        );
+    // /// A function to create a modulo 128 IFrame AX.25 control field
+    // /// 
+    // /// # Fields
+    // /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
+    // /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
+    // /// - `send_seq_num`: The send sequence number is a 7 bit integer. This number represents the place within the sending order of packets this packet sits to help with assembly of packets at reception
+    // /// 
+    // /// # Example
+    // /// Here is an example of a modulo 128 IFrame control field being created for an informational frame that is the first packet being sent, does not require an immediate response and the next frame to be sent will have the send sequence number of 1
+    // /// ```
+    // /// let control = Control::new_iframe128(1, false, 0);
+    // /// ```
+    // fn new_iframe128(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
+    //     assert!(
+    //         recv_seq_num < 128,
+    //         "The receive sequence number must not be more than 127"
+    //     );
+    //     assert!(
+    //         send_seq_num < 128,
+    //         "The send sequence number must not be more than 127"
+    //     );
 
-        let poll_bit: u8 = poll as u8;
+    //     let poll_bit: u8 = poll as u8;
 
-        let bytes: [u8; 2] = [(recv_seq_num << 1) | poll_bit, (send_seq_num << 1) | 0b0];
+    //     let bytes: [u8; 2] = [(recv_seq_num << 1) | poll_bit, (send_seq_num << 1) | 0b0];
 
-        return Control::IFrame128 {
-            recv_seq_num: recv_seq_num,
-            poll: poll,
-            send_seq_num: send_seq_num,
-            bytes: bytes,
-        };
-    }
+    //     return Control::IFrame128 {
+    //         recv_seq_num: recv_seq_num,
+    //         poll: poll,
+    //         send_seq_num: send_seq_num,
+    //         bytes: bytes,
+    //     };
+    // }
 
-    /// A function to create a modulo 128 SFrame AX.25 control field
-    /// 
-    /// # Fields
-    /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
-    /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
-    /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
-    /// 
-    /// # Example
-    /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
-    /// ```
-    /// let control = Control::new_sframe(1, true, 0);
-    /// ```
-    fn new_sframe128(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
-        assert!(
-            recv_seq_num < 128,
-            "The receive sequence number must not be more than 127"
-        );
-        assert!(
-            supervisory < 4,
-            "The supervisory number must not be more than 3"
-        );
+    // /// A function to create a modulo 128 SFrame AX.25 control field
+    // /// 
+    // /// # Fields
+    // /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
+    // /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
+    // /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
+    // /// 
+    // /// # Example
+    // /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
+    // /// ```
+    // /// let control = Control::new_sframe(1, true, 0);
+    // /// ```
+    // fn new_sframe128(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
+    //     assert!(
+    //         recv_seq_num < 128,
+    //         "The receive sequence number must not be more than 127"
+    //     );
+    //     assert!(
+    //         supervisory < 4,
+    //         "The supervisory number must not be more than 3"
+    //     );
 
-        let poll_final_bit: u8 = poll_final as u8;
+    //     let poll_final_bit: u8 = poll_final as u8;
 
-        let bytes: [u8; 2] = [
-            (recv_seq_num << 1) | poll_final_bit,
-            0b0000 | (supervisory << 2) | 0b01,
-        ];
+    //     let bytes: [u8; 2] = [
+    //         (recv_seq_num << 1) | poll_final_bit,
+    //         0b0000 | (supervisory << 2) | 0b01,
+    //     ];
 
-        return Control::SFrame128 {
-            recv_seq_num: recv_seq_num,
-            poll_final: poll_final,
-            supervisory: supervisory,
-            bytes: bytes,
-        };
-    }
+    //     return Control::SFrame128 {
+    //         recv_seq_num: recv_seq_num,
+    //         poll_final: poll_final,
+    //         supervisory: supervisory,
+    //         bytes: bytes,
+    //     };
+    // }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Pid {
     ISO8208 = 0x01,
@@ -297,25 +299,14 @@ pub enum Pid {
     EscChar = 0xFF,
 }
 
-pub struct Payload {
-    length: u64,
-    data: String,
+pub struct Payload<'a> {
+    pub length: u64,
+    pub data: &'a str,
 }
 
-impl Payload {
-    fn new<S: Into<String>>(str: S) -> Self {
-        let string: String = str.into();
-
-        return Payload {
-            length: string.len() as u64,
-            data: string,
-        };
-    }
-}
-
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy)]
 #[repr(u64)]
-enum CorrelationTag {
+pub enum CorrelationTag {
     Tag01 = 0xB74DB7DF8A532F3E, // RS(255, 239) 16-byte check value, 239 information bytes
     Tag02 = 0x26FF60A600CC8FDE, // RS(144,128) - shortened RS(255, 239), 128 info bytes
     Tag03 = 0xC7DC0508F3D9B09E, // RS(80,64) - shortened RS(255, 239), 64 info bytes
@@ -335,101 +326,111 @@ impl CorrelationTag {
     }
 }
 
-pub struct Packet {
-    dest_addr: Address,
-    source_addr: Address,
-    control: Control,
-    pid: Pid,
-    payload: Payload,
-    pub bytes: Vec<u8>
+#[derive(Clone, Copy)]
+pub struct Bytes<const N: usize> {
+    pub bytes: [u8; N],
+    pointer: usize,
 }
 
-impl Packet {
-    pub fn pack_to_ax25<S: Into<String>>(dest_callsign: S, source_callsign: S, recv_seq_num: u8, poll: bool, send_seq_num: u8, pid: Pid, data: S) -> Packet {
+impl<const N: usize> Bytes<N> {
+    pub fn new() -> Bytes<N> {
+        return Bytes {
+            bytes: [0x7E; N],
+            pointer: 0,
+        }
+    }
+
+    pub fn push(mut self: Self, value: u8) {
+        self.bytes[self.pointer] = value;
+
+        self.pointer += 1;
+    }
+
+    pub fn extend(self: Self, values: &[u8]) {
+        if values.len() + self.pointer >= self.bytes.len() {
+            // unreachable!("Values added to bytes must fit in the bytes object.");
+        }
+
+        for value in values {
+            self.push(*value);
+        }
+    }
+}
+
+pub struct Packet<'a> {
+    pub dest_addr: Address<'a>,
+    pub source_addr: Address<'a>,
+    pub control: Control,
+    pub pid: Pid,
+    pub payload: Payload<'a>,
+    pub bytes: [u8; 209]
+}
+
+impl<'a> Packet<'a> {
+    pub fn pack_to_ax25(dest_callsign: &'a str, source_callsign: &'a str, recv_seq_num: u8, poll: bool, send_seq_num: u8, pid: Pid, data: &'a str) -> Packet<'a> {
         let dest_addr: Address = Address::new(dest_callsign.into(), 0, true, false);
         let source_addr: Address = Address::new(source_callsign.into(), 0, true, true);
     
         let control: Control = Control::new_iframe(recv_seq_num, poll, send_seq_num);
     
-        let payload: Payload = Payload::new(data.into());
-    
-        
-        let payload_bytes_length: usize = payload.length as usize;
-        let payload_bytes = payload.data.as_bytes();
-        
-        let min_length: usize = match control {
-            Control::IFrame { .. } => 18,
-            Control::SFrame { .. } => 18,
-            Control::UFrame { .. } => 18,
-            
-            Control::IFrame128 { .. } => 19,
-            Control::SFrame128 { .. } => 19,
+        let payload: Payload = Payload {
+            length: data.len() as u64,
+            data: data,
         };
         
-        let mut bytes: Vec<u8> = Vec::with_capacity(min_length + payload_bytes_length);
+        let payload_bytes = payload.data.as_bytes();
+
+        let bytes: Bytes<209> = Bytes::<209>::new();
+
         bytes.push(0x7E); // AX.25 opening flag
-        bytes.extend_from_slice(&dest_addr.bytes);
-        bytes.extend_from_slice(&source_addr.bytes);
+        bytes.extend(&dest_addr.bytes);
+        bytes.extend(&source_addr.bytes);
         
         match control {
             Control::IFrame { byte, .. } => bytes.push(byte),
             Control::SFrame { byte, .. } => bytes.push(byte),
             Control::UFrame { byte, .. } => bytes.push(byte),
-            
-            Control::IFrame128 {
-                bytes: control_bytes,
-                ..
-            } => bytes.extend_from_slice(&control_bytes),
-            Control::SFrame128 {
-                bytes: control_bytes,
-                ..
-            } => bytes.extend_from_slice(&control_bytes),
         };
         
         bytes.push(pid as u8);
-        bytes.extend_from_slice(&payload_bytes);
+        bytes.extend(&payload_bytes);
 
         bytes.push(0x7E); // AX.25 closing flag
         
-        let packet: Packet = Packet {
+        let packet: Packet<'a> = Packet {
             dest_addr: dest_addr,
             source_addr: source_addr,
             control: control,
             pid: pid,
             payload: payload,
-            bytes: bytes,
+            bytes: bytes.bytes,
         };
         
         return packet;
     }
 
-    pub fn pack_to_fx25(ax25_packet: Packet) -> Vec<u8> {
-        let mut bytes: Vec<u8> = Vec::new();
+    pub fn pack_to_fx25(self: Self) -> [u8; 249] {
+        let bytes: Bytes<249> = Bytes::<249>::new();
 
         bytes.push(0x7E); // FX.25 Opening flags
         bytes.push(0x7E);
         bytes.push(0x7E);
         bytes.push(0x7E);
 
-        bytes.extend(CorrelationTag::Tag09.to_bytes());
-
-        let mut packet_bytes: Vec<u8> = Vec::new();
-
-        packet_bytes.extend(ax25_packet.bytes);
-        packet_bytes.resize(191, 0x7E); // Add padding
+        bytes.extend(&CorrelationTag::Tag09.to_bytes());
 
         // Parity check RS(255, 191)
-        // let parity_bytes: [u8; 32] = reed_solomon::rs255_191(packet_bytes);
+        // let parity_bytes: [u8; 32] = reed_solomon::rs255_191(ax25_packet.bytes);
         let parity_bytes: [u8; 32] = [0; 32];
 
-        bytes.extend(packet_bytes);
-        bytes.extend(parity_bytes);
+        bytes.extend(&self.bytes);
+        bytes.extend(&parity_bytes);
 
         bytes.push(0x7E); // FX.25 Closing flags
         bytes.push(0x7E);
         bytes.push(0x7E);
         bytes.push(0xFE);
 
-        return bytes;
+        return bytes.bytes;
     }
 }
