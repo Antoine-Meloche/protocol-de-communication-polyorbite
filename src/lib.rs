@@ -8,6 +8,8 @@ fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
 }
 
 pub mod pack;
+pub mod reed_solomon;
+pub mod gf;
 
 #[cfg(feature = "ground-station")]
 mod ground_station {
@@ -36,23 +38,10 @@ mod ground_station {
 mod cubesat {
     use crate::pack::{Packet, Pid};
 
-    pub fn load_to_transmit(dest_callsign: &str, source_callsign: &str, data: &str) -> [u8; 249] {
+    pub fn load_to_transmit(dest_callsign: &str, source_callsign: &str, data: &str) -> [u8; 271] {
         let ax25_packet: Packet = Packet::pack_to_ax25(dest_callsign, source_callsign, 1, true, 2, Pid::NoL3, data);
-        let fx25_bytes: [u8; 249] = ax25_packet.pack_to_fx25();
+        let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
 
         return fx25_bytes;
-    }
-}
-
-#[cfg(feature = "cubesat")]
-#[no_mangle]
-pub extern "C" fn main() -> ! {
-    let dest_callsign = "DESTCALL";
-    let source_callsign = "SRCCALL";
-    let data = "Hello, CubeSat!";
-    
-    let _fx25_bytes = cubesat::load_to_transmit(dest_callsign, source_callsign, data);
-    
-    loop {
     }
 }

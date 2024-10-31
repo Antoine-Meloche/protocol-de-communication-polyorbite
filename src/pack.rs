@@ -1,3 +1,5 @@
+use crate::reed_solomon::ReedSolomon;
+
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
 /// 
 /// # Fields
@@ -363,7 +365,7 @@ pub struct Packet<'a> {
     pub control: Control,
     pub pid: Pid,
     pub payload: Payload<'a>,
-    pub bytes: [u8; 209]
+    pub bytes: [u8; 191]
 }
 
 impl<'a> Packet<'a> {
@@ -380,7 +382,7 @@ impl<'a> Packet<'a> {
         
         let payload_bytes = payload.data.as_bytes();
 
-        let bytes: Bytes<209> = Bytes::<209>::new();
+        let bytes: Bytes<191> = Bytes::<191>::new();
 
         bytes.push(0x7E); // AX.25 opening flag
         bytes.extend(&dest_addr.bytes);
@@ -409,8 +411,8 @@ impl<'a> Packet<'a> {
         return packet;
     }
 
-    pub fn pack_to_fx25(self: Self) -> [u8; 249] {
-        let bytes: Bytes<249> = Bytes::<249>::new();
+    pub fn pack_to_fx25(self: Self) -> [u8; 271] {
+        let bytes: Bytes<271> = Bytes::<271>::new();
 
         bytes.push(0x7E); // FX.25 Opening flags
         bytes.push(0x7E);
@@ -419,12 +421,12 @@ impl<'a> Packet<'a> {
 
         bytes.extend(&CorrelationTag::Tag09.to_bytes());
 
-        // Parity check RS(255, 191)
-        // let parity_bytes: [u8; 32] = reed_solomon::rs255_191(ax25_packet.bytes);
-        let parity_bytes: [u8; 32] = [0; 32];
+        let rs = ReedSolomon::new();
 
-        bytes.extend(&self.bytes);
-        bytes.extend(&parity_bytes);
+        let ax25_packet_bytes: Bytes<255> = Bytes::<255>::new();
+        ax25_packet_bytes.extend(&self.bytes);
+
+        bytes.extend(&rs.encode(ax25_packet_bytes.bytes));
 
         bytes.push(0x7E); // FX.25 Closing flags
         bytes.push(0x7E);

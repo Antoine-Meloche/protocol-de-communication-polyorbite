@@ -11,11 +11,7 @@ cubesat = []
 
 [lib]
 name = "comms"
-# crate-type = ["cdylib", "rlib"]
-
-[[bin]]
-name = "cubesat"
-path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 pyo3 =  {version="0.22.0", optional=true}
