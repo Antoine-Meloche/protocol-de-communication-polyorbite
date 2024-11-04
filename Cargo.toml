@@ -10,7 +10,6 @@ std = []
 cubesat = []
 
 [lib]
-name = "comms"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]

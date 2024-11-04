@@ -1,11 +1,4 @@
 #![cfg_attr(not(feature = "std"), no_std)]
-#![cfg_attr(not(feature = "std"), no_main)]
-
-#![cfg(not(feature = "std"))]
-#[panic_handler]
-fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
-    loop {}
-}
 
 pub mod pack;
 pub mod reed_solomon;
@@ -35,7 +28,7 @@ mod ground_station {
 }
 
 #[cfg(feature = "cubesat")]
-mod cubesat {
+pub mod cubesat{
     use crate::pack::{Packet, Pid};
 
     pub fn load_to_transmit(dest_callsign: &str, source_callsign: &str, data: &str) -> [u8; 271] {
