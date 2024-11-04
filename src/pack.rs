@@ -11,6 +11,8 @@ use crate::reed_solomon::ReedSolomon;
 /// 
 /// # Example
 /// ```
+/// use comms::pack::Address;
+/// 
 /// let addr = Address::new("NOCALL", 0, true, false);
 /// ```
 pub struct Address<'a> {
@@ -31,7 +33,9 @@ impl<'a> Address<'a> {
     /// # Example
     /// Here is an example on creating an address with the `callsign` 'NOCALL', the `ssid` of '0', sending a command and being either a repeater address or a receiver address.
     /// ```
-    /// let addr = Address::new("NOCALL".to_string(), 0, true, false);
+    /// use comms::pack::Address;
+    /// 
+    /// let addr = Address::new("NOCALL", 0, true, false);
     /// ```
     pub fn new(callsign: &'a str, ssid: u8, command: bool, last_addr: bool) -> Self {
         if callsign.chars().count() > 6 {
@@ -122,6 +126,8 @@ impl Control {
     /// # Example
     /// Here is an example of a IFrame control field being created for a first packet in a communication that does not need an immediate response and the next packet will have the associated send sequence number of 1.
     /// ```
+    /// use comms::pack::Control;
+    /// 
     /// let control = Control::new_iframe(1, false, 0);
     /// ```
     pub fn new_iframe(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
@@ -158,6 +164,8 @@ impl Control {
     /// # Example
     /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
     /// ```
+    /// use comms::pack::Control;
+    /// 
     /// let control = Control::new_sframe(1, true, 0);
     /// ```
     pub fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
@@ -191,6 +199,8 @@ impl Control {
     /// # Example
     /// Here is an example of a UFrame control field being created for an unnumbered frame that has a frame modifier of 0 and requires an immediate response
     /// ```
+    /// use comms::pack::Control;
+    /// 
     /// let control = Control::new_uframe(0, true);
     /// ```
     pub fn new_uframe(frame_mod: u8, poll_final: bool) -> Self {
