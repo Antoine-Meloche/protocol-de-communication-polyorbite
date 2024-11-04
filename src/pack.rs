@@ -282,6 +282,15 @@ impl Control {
     // }
 }
 
+/// A byte-adjacent structure representing the PID field to determine the L3 network protocol being used in the transmission.
+/// 
+/// # Example
+/// Here is an example creation of Pid byte.
+/// ```
+/// use comms::pack::Pid;
+/// 
+/// let pid = Pid::RFC1144C;
+/// ```
 #[derive(Clone, Copy)]
 #[repr(u8)]
 pub enum Pid {
