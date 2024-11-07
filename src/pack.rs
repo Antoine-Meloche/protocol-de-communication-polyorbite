@@ -59,7 +59,7 @@ impl<'a> Address<'a> {
             | (last_addr as u8)
             | (((command ^ last_addr) as u8) << 7);
 
-        let bytes: Bytes<7> = Bytes::<7>::new();
+        let mut bytes: Bytes<7> = Bytes::<7>::new();
         bytes.extend(&callsign_bytes);
         bytes.push(ssid_byte);
 
@@ -331,24 +331,24 @@ impl CorrelationTag {
 #[derive(Clone, Copy)]
 pub struct Bytes<const N: usize> {
     pub bytes: [u8; N],
-    pointer: usize,
+    pub pointer: usize,
 }
 
 impl<const N: usize> Bytes<N> {
     pub fn new() -> Bytes<N> {
         return Bytes {
-            bytes: [0x7E; N],
+            bytes: [0; N],
             pointer: 0,
         }
     }
 
-    pub fn push(mut self: Self, value: u8) {
+    pub fn push(&mut self, value: u8) {
         self.bytes[self.pointer] = value;
 
         self.pointer += 1;
     }
 
-    pub fn extend(self: Self, values: &[u8]) {
+    pub fn extend(&mut self, values: &[u8]) {
         if values.len() + self.pointer >= self.bytes.len() {
             // unreachable!("Values added to bytes must fit in the bytes object.");
         }
@@ -382,7 +382,7 @@ impl<'a> Packet<'a> {
         
         let payload_bytes = payload.data.as_bytes();
 
-        let bytes: Bytes<191> = Bytes::<191>::new();
+        let mut bytes: Bytes<191> = Bytes::<191>::new();
 
         bytes.push(0x7E); // AX.25 opening flag
         bytes.extend(&dest_addr.bytes);
@@ -412,8 +412,8 @@ impl<'a> Packet<'a> {
     }
 
     pub fn pack_to_fx25(self: Self) -> [u8; 271] {
-        let bytes: Bytes<271> = Bytes::<271>::new();
-
+        let mut bytes: Bytes<271> = Bytes::<271>::new();
+        
         bytes.push(0x7E); // FX.25 Opening flags
         bytes.push(0x7E);
         bytes.push(0x7E);
@@ -421,9 +421,9 @@ impl<'a> Packet<'a> {
 
         bytes.extend(&CorrelationTag::Tag09.to_bytes());
 
-        let rs = ReedSolomon::new();
+        let rs: ReedSolomon = ReedSolomon::new();
 
-        let ax25_packet_bytes: Bytes<255> = Bytes::<255>::new();
+        let mut ax25_packet_bytes: Bytes<255> = Bytes::<255>::new();
         ax25_packet_bytes.extend(&self.bytes);
 
         bytes.extend(&rs.encode(ax25_packet_bytes.bytes));
@@ -434,5 +434,18 @@ impl<'a> Packet<'a> {
         bytes.push(0xFE);
 
         return bytes.bytes;
+    }
+
+    pub fn decode_fx25(bytes: [u8; 271]) -> [u8; 191] {
+        let rs: ReedSolomon = ReedSolomon::new();
+
+        let mut correlation_tag: Bytes<8> = Bytes::<8>::new();
+        correlation_tag.extend(&bytes[4..12]);
+
+        if correlation_tag.bytes == CorrelationTag::Tag09.to_bytes() {
+            // return rs.decode(bytes);    
+        }
+
+        return [0u8; 191];
     }
 }

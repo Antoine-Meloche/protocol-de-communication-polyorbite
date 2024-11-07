@@ -5,27 +5,29 @@ pub struct GaloisField {
 
 impl GaloisField {
     pub fn new() -> GaloisField {
-        let mut exp = [0u8; 256];
-        let mut log = [0u8; 256];
+        let mut gf = GaloisField{
+            exp: [0u8; 256],
+            log: [0u8; 256]
+        };
+        let mut value: u16 = 1;
 
-        let mut x: u16 = 1;
-        for i in 0..256 {
-            exp[i] = x as u8;
-            log[x as usize] = i as u8;
+        for i in 0..255 {
+            gf.exp[i] = value as u8;
+            gf.log[value as usize - 1] = i as u8;
 
-            x <<= 1;
-            if x & 0x100 != 0 {
-                x ^= 0x11d;
+            value <<= 1;
+
+            if value & 0x100 != 0 {
+                value = value ^ 0x11B;
             }
         }
 
-        GaloisField {
-            exp: exp,
-            log: log,
-        }
+        gf.exp[255] = gf.exp[0];
+
+        return gf;
     }
 
-    pub fn add(a: u8, b: u8) -> u8 {
+    pub fn add(&self, a: u8, b: u8) -> u8 {
         return a ^ b;
     }
 
@@ -34,8 +36,16 @@ impl GaloisField {
             return 0;
         }
 
-        let log_sum = self.log[a as usize] as usize + self.log[b as usize] as usize;
-        return self.exp[log_sum % 255];
+        let log_sum = ((self.log[a as usize] as u16 + self.log[b as usize] as u16) % 255) as u8;
+        return self.exp[log_sum as usize];
+    }
+
+    pub fn inverse(&self, a: u8) -> u8 {
+        if a == 0 {
+            unreachable!("");
+        }
+
+        return self.exp[255 - self.log[a as usize] as usize];
     }
 
     pub fn divide(&self, a: u8, b:u8) -> u8 {
@@ -43,11 +53,6 @@ impl GaloisField {
             return 0;
         }
 
-        if a == 0 {
-            return 0;
-        }
-
-        let log_diff = (self.log[a as usize] as i16 - self.log[b as usize] as i16 + 255) % 255;
-        return self.exp[log_diff as usize];
+        return self.multiply(a, self.inverse(b));
     }
 }
