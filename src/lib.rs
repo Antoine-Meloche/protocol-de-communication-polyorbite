@@ -23,9 +23,11 @@ mod ground_station {
         Ok(())
     }
     
-    #[cfg(test)]
-    mod test;
 }
+
+#[cfg(feature = "std")]
+#[cfg(test)]
+mod test;
 
 #[cfg(feature = "cubesat")]
 pub mod cubesat{

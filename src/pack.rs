@@ -1,4 +1,4 @@
-use crate::reed_solomon::ReedSolomon;
+// use crate::reed_solomon::ReedSolomon;
 
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
 /// 
@@ -412,39 +412,40 @@ impl<'a> Packet<'a> {
     }
 
     pub fn pack_to_fx25(self: Self) -> [u8; 271] {
-        let mut bytes: Bytes<271> = Bytes::<271>::new();
+        // let mut bytes: Bytes<271> = Bytes::<271>::new();
         
-        bytes.push(0x7E); // FX.25 Opening flags
-        bytes.push(0x7E);
-        bytes.push(0x7E);
-        bytes.push(0x7E);
+        // bytes.push(0x7E); // FX.25 Opening flags
+        // bytes.push(0x7E);
+        // bytes.push(0x7E);
+        // bytes.push(0x7E);
 
-        bytes.extend(&CorrelationTag::Tag09.to_bytes());
+        // bytes.extend(&CorrelationTag::Tag09.to_bytes());
 
-        let rs: ReedSolomon = ReedSolomon::new();
+        // let rs: ReedSolomon = ReedSolomon::new();
 
-        let mut ax25_packet_bytes: Bytes<255> = Bytes::<255>::new();
-        ax25_packet_bytes.extend(&self.bytes);
+        // let mut ax25_packet_bytes: Bytes<255> = Bytes::<255>::new();
+        // ax25_packet_bytes.extend(&self.bytes);
 
-        bytes.extend(&rs.encode(ax25_packet_bytes.bytes));
+        // bytes.extend(&rs.encode(ax25_packet_bytes.bytes));
 
-        bytes.push(0x7E); // FX.25 Closing flags
-        bytes.push(0x7E);
-        bytes.push(0x7E);
-        bytes.push(0xFE);
+        // bytes.push(0x7E); // FX.25 Closing flags
+        // bytes.push(0x7E);
+        // bytes.push(0x7E);
+        // bytes.push(0xFE);
 
-        return bytes.bytes;
+        return [0u8; 271];
+        // return bytes.bytes;
     }
 
     pub fn decode_fx25(bytes: [u8; 271]) -> [u8; 191] {
-        let rs: ReedSolomon = ReedSolomon::new();
+        // let rs: ReedSolomon = ReedSolomon::new();
 
-        let mut correlation_tag: Bytes<8> = Bytes::<8>::new();
-        correlation_tag.extend(&bytes[4..12]);
+        // let mut correlation_tag: Bytes<8> = Bytes::<8>::new();
+        // correlation_tag.extend(&bytes[4..12]);
 
-        if correlation_tag.bytes == CorrelationTag::Tag09.to_bytes() {
-            // return rs.decode(bytes);    
-        }
+        // if correlation_tag.bytes == CorrelationTag::Tag09.to_bytes() {
+        //     // return rs.decode(bytes);    
+        // }
 
         return [0u8; 191];
     }
