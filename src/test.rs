@@ -1,7 +1,7 @@
 use pack::{Bytes, Packet, Pid};
 
 use gf;
-// use reed_solomon::RS255_191;
+use reed_solomon::ReedSolomon;
 
 use gf256;
 
@@ -50,22 +50,23 @@ fn test_properties_gf() {
     assert_eq!(gf::GF256(0x6f) * (gf::GF256(0xf3) + gf::GF256(0x64)), gf::GF256(0x6f) * gf::GF256(0xf3) + gf::GF256(0x6f) * gf::GF256(0x64));
 }
 
-// #[test]
-// fn test_rs_encode_decode() {
-//     let rs = RS255_191::new();
-
-//     let mut message = [0u8; 255];
-//     for i in 0..191 {
-//         message[i] = i as u8;
-//     }
-
-//     let mut encoded = message;
-//     rs.encode(&mut encoded);
-
-//     assert_eq!(rs.check(&encoded), 0);
-
-//     let mut corrupted = encoded;
-//     corrupted[0] ^= 0x01;
-
-//     assert!(rs.check(&corrupted) > 0);
-// }
+#[test]
+fn test_encode_decode() {
+    let rs = ReedSolomon::new();
+    
+    let mut message: [u8; 191] = [0u8; 191];
+    for i in 0..191 {
+        message[i] = (i % 256) as u8;
+    }
+    
+    let mut encoded: [u8; 255] = rs.encode(&message);
+    
+    encoded[0] ^= 0xFF;
+    encoded[1] ^= 0xFF;
+    encoded[2] ^= 0xFF;
+    
+    let decoded = rs.decode(&mut encoded);
+    
+    assert!(decoded.is_some());
+    assert_eq!(decoded.unwrap(), message);
+}
