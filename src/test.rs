@@ -25,8 +25,8 @@ fn test_add_gf() {
 #[test]
 fn test_multiply_gf() {
     assert_eq!((gf::GF256(0x53) * gf::GF256(0xca)).0, (gf256::gf256(0x53) * gf256::gf256(0xca)).0);
-    // assert_eq!((gf::GF256(0x32) * gf::GF256(0xf5)).0, (gf256::gf256(0x32) * gf256::gf256(0xf5)).0);
-    // assert_eq!((gf::GF256(0xff) * gf::GF256(0xff)).0, (gf256::gf256(0xff) * gf256::gf256(0xff)).0);
+    assert_eq!((gf::GF256(0x32) * gf::GF256(0xf5)).0, (gf256::gf256(0x32) * gf256::gf256(0xf5)).0);
+    assert_eq!((gf::GF256(0xff) * gf::GF256(0xff)).0, (gf256::gf256(0xff) * gf256::gf256(0xff)).0);
 }
 
 #[test]
