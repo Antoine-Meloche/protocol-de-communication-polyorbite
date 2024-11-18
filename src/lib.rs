@@ -1,4 +1,4 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "ground-station"), no_std)]
 
 pub mod pack;
 pub mod reed_solomon;
@@ -6,26 +6,19 @@ pub mod gf;
 
 #[cfg(feature = "ground-station")]
 mod ground_station {
-    use pyo3::prelude::*;
+    use crate::pack::{Packet, Pid};
 
-    use pack::Packet;
+    const SOURCE_CALLSIGN: &str = "";
 
-    /// Formats the sum of two numbers as string.
-    #[pyfunction]
-    fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-        Ok((a + b).to_string())
+    pub fn send_data(dest_callsign: &str, data: &str) {
+        let ax25_packet: Packet = Packet::pack_to_ax25(dest_callsign, SOURCE_CALLSIGN, 1, true, 2, Pid::NoL3, data);
+        let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
+
+        println!("{:?}", fx25_bytes); // FIXME: replace with sending logic
     }
-    
-    /// A Python module implemented in Rust.
-    #[pymodule]
-    pub fn comms(m: &Bound<'_, PyModule>) -> PyResult<()> {
-        m.add_function(wrap_pyfunction!(sum_as_string, m)?)?;
-        Ok(())
-    }
-    
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "ground-station")]
 #[cfg(test)]
 mod test;
 

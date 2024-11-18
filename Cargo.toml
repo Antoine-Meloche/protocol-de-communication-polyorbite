@@ -4,16 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["std"]
-ground-station = ["dep:pyo3"]
-std = []
+default = ["ground-station"]
+ground-station = []
 cubesat = []
 
 [lib]
-crate-type = ["cdylib", "rlib"]
-
-[dependencies]
-pyo3 =  {version="0.22.0", optional=true}
+crate-type = ["rlib"]
 
 [dev-dependencies]
 gf256 = "0.3.0"
