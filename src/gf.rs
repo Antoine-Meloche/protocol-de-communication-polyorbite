@@ -30,16 +30,29 @@ impl GF256 {
         return result;
     }
 
+    pub fn inverse(a: u8) -> u8 {
+        if a == 0 {
+            return 0;
+        }
+
+        let mut result = a;
+        for i in 0..7 {
+            result = Self::multiply(result, result);
+
+            if i != 6 {
+                result = Self::multiply(result, a);
+            }
+        }
+
+        return result;
+    }
+
     pub fn divide(a: u8, b: u8) -> u8 {
         if b == 0 {
             return 0;
         }
 
-        let mut inv: u8 = b;
-        for _ in 0..6 {
-            inv = Self::multiply(inv, inv);
-        }
-        return Self::multiply(a, inv);
+        return Self::multiply(a, Self::inverse(b));
     }
 }
 
