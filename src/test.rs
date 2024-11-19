@@ -59,7 +59,7 @@ fn test_encode_decode() {
         message[i] = (i % 256) as u8;
     }
     
-    let mut encoded: [u8; 255] = rs.encode(&message);
+    let mut encoded: [u8; 255] = rs.encode(&message).unwrap();
     
     encoded[0] ^= 0xFF;
     encoded[1] ^= 0xFF;

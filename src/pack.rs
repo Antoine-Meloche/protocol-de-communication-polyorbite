@@ -2,7 +2,7 @@
 
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
 /// 
-/// # Fields
+/// # Arguments
 /// - `callsign`: A `String` representing the station's callsign (up to 6 characters).
 /// - `ssid`: An unsigned 8-bit integer representing the SSID. Only the lower 4 bits are used.
 /// - `bytes`: A 7-byte array representing the encoded callsign and SSID in a format suitable for
@@ -24,7 +24,7 @@ pub struct Address<'a> {
 impl<'a> Address<'a> {
     /// A function to create an AX.25 adress from a callsign and an ssid.
     /// 
-    /// # Fields
+    /// # Arguments
     /// - `callsign`: A `String` representing the station's callsign (up to 6 characters)
     /// - `ssid`: A `u8` integer representing the SSID, only the first 4 bits are used therefore the ssid must be at most 15
     /// - `command`: A `bool` value indicating if the address is sending a command or a response
@@ -77,7 +77,7 @@ impl<'a> Address<'a> {
 
 /// A representatoin of the `control` byte/bytes in an AX.25 packet
 /// 
-/// # Fields
+/// # Arguments
 /// The fields vary a lot between different types of frames, but each frame has at least the byte or bytes field which is used for the transmission of the frames. and the poll/final bool.
 /// - `poll`/`poll_final`: A `bool` representing if the current packet requires an immediate reponse.
 /// - `byte`(modulo 8): A `u8` containing the byte representation of the control field
@@ -118,7 +118,7 @@ pub enum Control {
 impl Control {
     /// A function to create an IFrame AX.25 control field
     /// 
-    /// # Fields
+    /// # Arguments
     /// - `recv_seq_num`: The receive sequence number is a 3 bit integer. This number is the `send_seq_num` of the next frame to be received
     /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
     /// - `send_seq_num`: The send sequence number is a 3 bit integer. This number represents the place of the packet in the sending/receiving order of the packets for assembly at reception
@@ -156,7 +156,7 @@ impl Control {
 
     /// A function to create an SFrame AX.25 control field
     /// 
-    /// # Fields
+    /// # Arguments
     /// - `recv_seq_num`: The receive sequence number is a 3 bit integer. This number is the `send_seq_num` of the next frame to be received
     /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
     /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
@@ -192,7 +192,7 @@ impl Control {
 
     /// A function to create a UFrame AX.25 control field
     /// 
-    /// # Fields
+    /// # Arguments
     /// - `frame_mod`: A `u8` representing the unnumbered frame modifier bits, this value must be less than 32
     /// - `poll`(IFrame)/`poll_final`(SFrame, UFrame): A `bool` used to determine if the command should be immediately reponded to
     /// 
@@ -222,7 +222,7 @@ impl Control {
 
     // /// A function to create a modulo 128 IFrame AX.25 control field
     // /// 
-    // /// # Fields
+    // /// # Arguments
     // /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
     // /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
     // /// - `send_seq_num`: The send sequence number is a 7 bit integer. This number represents the place within the sending order of packets this packet sits to help with assembly of packets at reception
@@ -256,7 +256,7 @@ impl Control {
 
     // /// A function to create a modulo 128 SFrame AX.25 control field
     // /// 
-    // /// # Fields
+    // /// # Arguments
     // /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
     // /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
     // /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
