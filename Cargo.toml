@@ -7,12 +7,14 @@ edition = "2021"
 default = ["ground-station"]
 ground-station = []
 cubesat = []
+fuzz = []
 
 [lib]
 crate-type = ["rlib"]
 
 [dev-dependencies]
 gf256 = "0.3.0"
+rand = "0.8.5"
 
 [profile.release]
 strip = true
