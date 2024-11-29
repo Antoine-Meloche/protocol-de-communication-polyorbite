@@ -22,3 +22,6 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[dependencies]
+crc-0x8810 = "0.1.0"

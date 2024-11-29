@@ -1,4 +1,4 @@
-use pack::{Bytes, Packet, Pid};
+use pack::{compute_crc, Bytes, Packet, Pid};
 
 use gf;
 use reed_solomon::ReedSolomon;
@@ -112,6 +112,18 @@ fn test_encode_decode() {
 
     assert!(decoded.is_some());
     assert_eq!(decoded.unwrap(), message);
+}
+
+#[test]
+fn test_crc() {
+    let crc = compute_crc(&[0x00, 0x00, 0x00, 0x00]);
+    assert_eq!(crc, 0x0321);
+    let crc = compute_crc(&[0xff, 0xff, 0xff, 0xff]);
+    assert_eq!(crc, 0xF0B8);
+    let crc = compute_crc(&[0xaa, 0xaa, 0xaa, 0xaa]);
+    assert_eq!(crc, 0x59C0);
+    let crc = compute_crc(&[0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39]);
+    assert_eq!(crc, 0x6F91);
 }
 
 #[cfg(feature = "fuzz")]

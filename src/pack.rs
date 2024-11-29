@@ -1,5 +1,7 @@
 // use crate::reed_solomon::ReedSolomon;
 
+use crc_0x8810::update;
+
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
 /// 
 /// # Arguments
@@ -347,6 +349,17 @@ impl CorrelationTag {
     }
 }
 
+pub fn compute_crc(bytes: &[u8]) -> u16 {
+    // CRC-16/MCRF4XX
+    let mut crc: u16 = 0xffff;
+    
+    for &byte in bytes {
+        let copy = byte;
+        crc = update(crc, copy);
+    }
+    crc
+}
+
 #[derive(Clone, Copy)]
 pub struct Bytes<const N: usize> {
     pub bytes: [u8; N],
@@ -401,6 +414,9 @@ impl<'a> Packet<'a> {
         
         let payload_bytes = payload.data.as_bytes();
 
+        let crc = compute_crc(payload_bytes).to_be_bytes();
+
+
         let mut bytes: Bytes<191> = Bytes::<191>::new();
 
         bytes.push(0x7E); // AX.25 opening flag
@@ -415,7 +431,7 @@ impl<'a> Packet<'a> {
         
         bytes.push(pid as u8);
         bytes.extend(&payload_bytes);
-
+        bytes.extend(&crc);
         bytes.push(0x7E); // AX.25 closing flag
         
         let packet: Packet<'a> = Packet {

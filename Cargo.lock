@@ -18,9 +18,16 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "comms"
 version = "0.1.0"
 dependencies = [
+ "crc-0x8810",
  "gf256",
  "rand",
 ]
+
+[[package]]
+name = "crc-0x8810"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c40e3f066f8bdeb37f713f4e3c67f28e5b066f56f1b9e2589c9390981578d859"
 
 [[package]]
 name = "darling"
