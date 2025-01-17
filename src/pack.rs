@@ -1,20 +1,18 @@
-// use crate::reed_solomon::ReedSolomon;
-
 use crc_0x8810::update;
 
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
-/// 
+///
 /// # Arguments
 /// - `callsign`: A `String` representing the station's callsign (up to 6 characters).
 /// - `ssid`: An unsigned 8-bit integer representing the SSID. Only the lower 4 bits are used.
 /// - `bytes`: A 7-byte array representing the encoded callsign and SSID in a format suitable for
 ///    AX.25 transmission. The first 6 bytes correspond to the callsign, and the 7th byte encodes the SSID
 ///    and control information.
-/// 
+///
 /// # Example
 /// ```
 /// use comms::pack::Address;
-/// 
+///
 /// let addr = Address::new("NOCALL", 0, true, false);
 /// ```
 pub struct Address<'a> {
@@ -25,18 +23,18 @@ pub struct Address<'a> {
 
 impl<'a> Address<'a> {
     /// A function to create an AX.25 adress from a callsign and an ssid.
-    /// 
+    ///
     /// # Arguments
     /// - `callsign`: A `String` representing the station's callsign (up to 6 characters)
     /// - `ssid`: A `u8` integer representing the SSID, only the first 4 bits are used therefore the ssid must be at most 15
     /// - `command`: A `bool` value indicating if the address is sending a command or a response
     /// - `last_addr`: A `bool` value indicating if the address is the last one in the list of receiver, repeaters and sender
-    /// 
+    ///
     /// # Example
     /// Here is an example on creating an address with the `callsign` 'NOCALL', the `ssid` of '0', sending a command and being either a repeater address or a receiver address.
     /// ```
     /// use comms::pack::Address;
-    /// 
+    ///
     /// let addr = Address::new("NOCALL", 0, true, false);
     /// ```
     pub fn new(callsign: &'a str, ssid: u8, command: bool, last_addr: bool) -> Self {
@@ -60,10 +58,8 @@ impl<'a> Address<'a> {
             callsign_bytes[i] <<= 1;
         }
 
-        let ssid_byte: u8 = (ssid << 1)
-            | 0b01100000
-            | (last_addr as u8)
-            | (((command ^ last_addr) as u8) << 7);
+        let ssid_byte: u8 =
+            (ssid << 1) | 0b01100000 | (last_addr as u8) | (((command ^ last_addr) as u8) << 7);
 
         let mut bytes: Bytes<7> = Bytes::<7>::new();
         bytes.extend(&callsign_bytes);
@@ -78,7 +74,7 @@ impl<'a> Address<'a> {
 }
 
 /// A representatoin of the `control` byte/bytes in an AX.25 packet
-/// 
+///
 /// # Arguments
 /// The fields vary a lot between different types of frames, but each frame has at least the byte or bytes field which is used for the transmission of the frames. and the poll/final bool.
 /// - `poll`/`poll_final`: A `bool` representing if the current packet requires an immediate reponse.
@@ -102,7 +98,6 @@ pub enum Control {
         poll_final: bool, // 1 bit
         byte: u8,         // fully constructed u frame control byte
     },
-
     // IFrame128 { // FIXME: non functional because of fixed bytes length of packet
     //     recv_seq_num: u8, // 7 bits
     //     poll: bool,       // 1 bit
@@ -119,17 +114,17 @@ pub enum Control {
 
 impl Control {
     /// A function to create an IFrame AX.25 control field
-    /// 
+    ///
     /// # Arguments
     /// - `recv_seq_num`: The receive sequence number is a 3 bit integer. This number is the `send_seq_num` of the next frame to be received
     /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
     /// - `send_seq_num`: The send sequence number is a 3 bit integer. This number represents the place of the packet in the sending/receiving order of the packets for assembly at reception
-    /// 
+    ///
     /// # Example
     /// Here is an example of a IFrame control field being created for a first packet in a communication that does not need an immediate response and the next packet will have the associated send sequence number of 1.
     /// ```
     /// use comms::pack::Control;
-    /// 
+    ///
     /// let control = Control::new_iframe(1, false, 0);
     /// ```
     pub fn new_iframe(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
@@ -157,17 +152,17 @@ impl Control {
     // TODO: check format of the example (specifically the supervisory function bits (section 4.2.1.2))
 
     /// A function to create an SFrame AX.25 control field
-    /// 
+    ///
     /// # Arguments
     /// - `recv_seq_num`: The receive sequence number is a 3 bit integer. This number is the `send_seq_num` of the next frame to be received
     /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
     /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
-    /// 
+    ///
     /// # Example
     /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
     /// ```
     /// use comms::pack::Control;
-    /// 
+    ///
     /// let control = Control::new_sframe(1, true, 0);
     /// ```
     pub fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
@@ -193,16 +188,16 @@ impl Control {
     }
 
     /// A function to create a UFrame AX.25 control field
-    /// 
+    ///
     /// # Arguments
     /// - `frame_mod`: A `u8` representing the unnumbered frame modifier bits, this value must be less than 32
     /// - `poll`(IFrame)/`poll_final`(SFrame, UFrame): A `bool` used to determine if the command should be immediately reponded to
-    /// 
+    ///
     /// # Example
     /// Here is an example of a UFrame control field being created for an unnumbered frame that has a frame modifier of 0 and requires an immediate response
     /// ```
     /// use comms::pack::Control;
-    /// 
+    ///
     /// let control = Control::new_uframe(0, true);
     /// ```
     pub fn new_uframe(frame_mod: u8, poll_final: bool) -> Self {
@@ -223,12 +218,12 @@ impl Control {
     }
 
     // /// A function to create a modulo 128 IFrame AX.25 control field
-    // /// 
+    // ///
     // /// # Arguments
     // /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
     // /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
     // /// - `send_seq_num`: The send sequence number is a 7 bit integer. This number represents the place within the sending order of packets this packet sits to help with assembly of packets at reception
-    // /// 
+    // ///
     // /// # Example
     // /// Here is an example of a modulo 128 IFrame control field being created for an informational frame that is the first packet being sent, does not require an immediate response and the next frame to be sent will have the send sequence number of 1
     // /// ```
@@ -257,12 +252,12 @@ impl Control {
     // }
 
     // /// A function to create a modulo 128 SFrame AX.25 control field
-    // /// 
+    // ///
     // /// # Arguments
     // /// - `recv_seq_num`: The receive sequence number is a 7 bit integer. This number is the `send_seq_num` of the next frame to be received
     // /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
     // /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
-    // /// 
+    // ///
     // /// # Example
     // /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
     // /// ```
@@ -295,12 +290,12 @@ impl Control {
 }
 
 /// A byte-adjacent structure representing the PID field to determine the L3 network protocol being used in the transmission.
-/// 
+///
 /// # Example
 /// Here is an example creation of Pid byte.
 /// ```
 /// use comms::pack::Pid;
-/// 
+///
 /// let pid = Pid::RFC1144C;
 /// ```
 #[derive(Clone, Copy)]
@@ -352,7 +347,7 @@ impl CorrelationTag {
 pub fn compute_crc(bytes: &[u8]) -> u16 {
     // CRC-16/MCRF4XX
     let mut crc: u16 = 0xffff;
-    
+
     for &byte in bytes {
         let copy = byte;
         crc = update(crc, copy);
@@ -371,14 +366,14 @@ impl<const N: usize> Bytes<N> {
         return Bytes {
             bytes: [0; N],
             pointer: 0,
-        }
+        };
     }
 
     pub fn push(&mut self, value: u8) {
         if self.pointer >= self.bytes.len() {
             return;
         }
-        
+
         self.bytes[self.pointer] = value;
 
         self.pointer += 1;
@@ -402,43 +397,50 @@ pub struct Packet<'a> {
     pub control: Control,
     pub pid: Pid,
     pub payload: Payload<'a>,
-    pub bytes: [u8; 191]
+    pub bytes: [u8; 191],
 }
 
 impl<'a> Packet<'a> {
-    pub fn pack_to_ax25(dest_callsign: &'a str, source_callsign: &'a str, recv_seq_num: u8, poll: bool, send_seq_num: u8, pid: Pid, data: &'a str) -> Packet<'a> {
+    pub fn pack_to_ax25(
+        dest_callsign: &'a str,
+        source_callsign: &'a str,
+        recv_seq_num: u8,
+        poll: bool,
+        send_seq_num: u8,
+        pid: Pid,
+        data: &'a str,
+    ) -> Packet<'a> {
         let dest_addr: Address = Address::new(dest_callsign.into(), 0, true, false);
         let source_addr: Address = Address::new(source_callsign.into(), 0, true, true);
-    
+
         let control: Control = Control::new_iframe(recv_seq_num, poll, send_seq_num);
-    
+
         let payload: Payload = Payload {
             length: data.len() as u64,
             data: data,
         };
-        
+
         let payload_bytes = payload.data.as_bytes();
 
         let crc = compute_crc(payload_bytes).to_be_bytes();
-
 
         let mut bytes: Bytes<191> = Bytes::<191>::new();
 
         bytes.push(0x7E); // AX.25 opening flag
         bytes.extend(&dest_addr.bytes);
         bytes.extend(&source_addr.bytes);
-        
+
         match control {
             Control::IFrame { byte, .. } => bytes.push(byte),
             Control::SFrame { byte, .. } => bytes.push(byte),
             Control::UFrame { byte, .. } => bytes.push(byte),
         };
-        
+
         bytes.push(pid as u8);
         bytes.extend(&payload_bytes);
         bytes.extend(&crc);
         bytes.push(0x7E); // AX.25 closing flag
-        
+
         let packet: Packet<'a> = Packet {
             dest_addr: dest_addr,
             source_addr: source_addr,
@@ -447,13 +449,13 @@ impl<'a> Packet<'a> {
             payload: payload,
             bytes: bytes.bytes,
         };
-        
+
         return packet;
     }
 
     pub fn pack_to_fx25(self: Self) -> [u8; 271] {
         let mut bytes: Bytes<271> = Bytes::<271>::new();
-        
+
         bytes.push(0x7E); // FX.25 Opening flags
         bytes.push(0x7E);
         bytes.push(0x7E);
@@ -483,7 +485,7 @@ impl<'a> Packet<'a> {
         correlation_tag.extend(&bytes[4..12]);
 
         if correlation_tag.bytes == CorrelationTag::Tag09.to_bytes() {
-            // return rs.decode(bytes);    
+            // return rs.decode(bytes);
         }
 
         return [0u8; 191];

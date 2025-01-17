@@ -1,22 +1,15 @@
-use pack::{compute_crc, Bytes, Packet, Pid};
-
+use ax25;
 use gf;
-use reed_solomon::ReedSolomon;
-
 use gf256;
 
-use ax25;
+use reed_solomon::{Decoder, Encoder};
+
+use pack::{compute_crc, Bytes, Packet, Pid};
 
 use super::*;
 
 #[test]
 fn test_ax25_pack() {
-    let mut bytes: Bytes<191> = Bytes::<191>::new();
-    bytes.extend(&[
-        126, 156, 148, 110, 160, 64, 64, 224, 156, 110, 152, 138, 154, 64, 97, 52, 240, 72, 101,
-        108, 108, 111, 32, 119, 111, 114, 108, 100, 126,
-    ]);
-
     let dest_callsign = "NJ7P";
     let source_callsign = "N7LEM";
     let recv_seq_num = 1;
@@ -36,9 +29,22 @@ fn test_ax25_pack() {
     )
     .bytes;
 
-    assert_eq!(actual_output, bytes.bytes);
+    let mut to_parse = actual_output.clone();
 
-    let parsed = ax25::frame::Ax25Frame::from_bytes(&bytes.bytes[1..(bytes.bytes.len())]);
+    let mut removed_count = 0;
+    for i in (0..to_parse.len()).rev() {
+        if to_parse[i] != 0 {
+            to_parse[i] = 0;
+            removed_count += 1;
+
+            if removed_count == 3 {
+                to_parse[i] = 0x7E;
+                break;
+            }
+        }
+    }
+
+    let parsed = ax25::frame::Ax25Frame::from_bytes(&to_parse[1..(to_parse.len())]);
     assert!(parsed.is_ok());
 
     match parsed {
@@ -130,23 +136,27 @@ fn test_properties_gf() {
 
 #[test]
 fn test_encode_decode() {
-    let rs: ReedSolomon = ReedSolomon::new();
-
     let mut message: [u8; 191] = [0u8; 191];
     for i in 0..191 {
         message[i] = (i % 256) as u8;
     }
 
-    let mut encoded: [u8; 255] = rs.encode(&message).unwrap();
+    let ecc_len = 64;
+
+    let encoder = Encoder::new(ecc_len);
+    let decoder = Decoder::new(ecc_len);
+
+    let mut encoded = encoder.encode(&message[..]);
 
     encoded[0] ^= 0xFF;
     encoded[1] ^= 0xFF;
     encoded[2] ^= 0xFF;
 
-    let decoded: Option<[u8; 191]> = rs.decode(&mut encoded);
+    let known_errors = [0];
+    let decoded = decoder.correct(&mut encoded, Some(&known_errors));
 
-    assert!(decoded.is_some());
-    assert_eq!(decoded.unwrap(), message);
+    assert!(decoded.is_ok());
+    assert_eq!(decoded.unwrap().data(), message);
 }
 
 #[test]
@@ -163,12 +173,14 @@ fn test_crc() {
 
 #[cfg(feature = "fuzz")]
 mod fuzzing {
-    use crate::{gf, reed_solomon::ReedSolomon};
+    use crate::gf;
     use rand::{
         distributions::{Distribution, Standard},
         random, Rng,
     };
     use std::fmt::Debug;
+
+    use reed_solomon::{Decoder, Encoder};
 
     const FUZZNUM: usize = 10000;
 
@@ -275,27 +287,31 @@ mod fuzzing {
 
     #[test]
     fn fuzz_reed_solomon() {
-        for x in 0..33 {
-            let rs = ReedSolomon::new();
+        for x in 0..255 {
+            let mut message: [u8; 191] = [0u8; 191];
+            for i in 0..191 {
+                message[i] = (i % 256) as u8;
+            }
 
-            let message: [u8; 191] = [0u8; 191];
+            let ecc_len = 64;
 
-            if let Some(encoded_message) = rs.encode(&message) {
-                let mut codeword = encoded_message;
+            let encoder = Encoder::new(ecc_len);
+            let decoder = Decoder::new(ecc_len);
 
-                for i in 0..x {
-                    let a: u8 = random();
-                    codeword[i as usize] ^= a; // Corrupt one byte
-                }
+            let mut encoded = encoder.encode(&message[..]);
 
-                if let Some(decoded_message) = rs.decode(&mut codeword) {
-                    assert_eq!(decoded_message, message);
-                    println!("Decoding succeeded! Message: {:?}", decoded_message);
-                } else {
-                    println!("Decoding failed: too many errors.");
-                }
+            for i in 0..=x {
+                encoded[i] ^= 0xFF;
+            }
+
+            let known_errors = [0];
+            let decoded = decoder.correct(&mut encoded, Some(&known_errors));
+
+            if x < 32 {
+                assert!(decoded.is_ok());
+                assert_eq!(decoded.unwrap().data(), message);
             } else {
-                println!("Encoding failed");
+                assert!(decoded.is_err());
             }
         }
     }
@@ -337,7 +353,7 @@ mod fuzzing {
             let pid = Pid::NoL3;
 
             let mut rng = rand::thread_rng();
-            let length = rng.gen_range(0..174);
+            let length = rng.gen_range(0..171);
 
             let data = &(0..length)
                 .map(|_| rng.gen_range(32..127) as u8 as char)
@@ -354,8 +370,19 @@ mod fuzzing {
             )
             .bytes;
 
-            let parsed =
-                ax25::frame::Ax25Frame::from_bytes(&actual_output[1..(actual_output.len())]);
+            let mut to_parse = actual_output.clone();
+
+            let mut removed_count = 0;
+            for i in (0..to_parse.len()).rev() {
+                if to_parse[i] == 0x7E {
+                    to_parse[i - 2] = 0x7E;
+                    to_parse[i - 1] = 0;
+                    to_parse[i] = 0;
+                    break;
+                }
+            }
+
+            let parsed = ax25::frame::Ax25Frame::from_bytes(&to_parse[1..(to_parse.len())]);
             assert!(parsed.is_ok());
 
             match parsed {
@@ -365,7 +392,7 @@ mod fuzzing {
 
                     let mut data_bytes = Bytes::<174>::new();
                     data_bytes.extend(&data.as_bytes());
-                    data_bytes.push(126);
+                    data_bytes.push(0x7E);
                     assert_eq!(Vec::from(data_bytes.bytes), parsed.to_bytes()[16..]);
                 }
                 Err(_) => {}

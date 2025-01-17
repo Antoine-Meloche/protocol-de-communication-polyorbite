@@ -27,3 +27,4 @@ panic = "abort"
 
 [dependencies]
 crc-0x8810 = "0.1.0"
+reed-solomon = "0.2"
