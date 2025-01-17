@@ -375,6 +375,10 @@ impl<const N: usize> Bytes<N> {
     }
 
     pub fn push(&mut self, value: u8) {
+        if self.pointer >= self.bytes.len() {
+            return;
+        }
+        
         self.bytes[self.pointer] = value;
 
         self.pointer += 1;
@@ -382,6 +386,7 @@ impl<const N: usize> Bytes<N> {
 
     pub fn extend(&mut self, values: &[u8]) {
         if values.len() + self.pointer >= self.bytes.len() {
+            return;
             // unreachable!("Values added to bytes must fit in the bytes object.");
         }
 
