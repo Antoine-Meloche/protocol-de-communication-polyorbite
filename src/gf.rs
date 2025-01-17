@@ -103,7 +103,7 @@ impl GF256 {
             return 0;
         }
 
-        let mut result = a;
+        let mut result: u8 = a;
         for i in 0..7 {
             result = Self::multiply(result, result);
 
