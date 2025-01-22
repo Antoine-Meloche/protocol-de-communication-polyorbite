@@ -4,15 +4,14 @@ pub mod gf;
 pub mod pack;
 
 extern crate reed_solomon;
-use reed_solomon::{Decoder, Encoder};
 
 #[cfg(feature = "ground-station")]
 mod ground_station {
     use crate::pack::{Packet, Pid};
 
-    const SOURCE_CALLSIGN: &str = "";
+    const SOURCE_CALLSIGN: [u8; 6] = *b"HFG5  ";
 
-    pub fn send_data(dest_callsign: &str, data: &str) {
+    pub fn send_data(dest_callsign: [u8; 6], data: [u8; 171]) {
         let ax25_packet: Packet =
             Packet::pack_to_ax25(dest_callsign, SOURCE_CALLSIGN, 1, true, 2, Pid::NoL3, data);
         let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();

@@ -10,13 +10,16 @@ use super::*;
 
 #[test]
 fn test_ax25_pack() {
-    let dest_callsign = "NJ7P";
-    let source_callsign = "N7LEM";
+    let dest_callsign: [u8; 6] = *b"  NJ7P";
+    let source_callsign: [u8; 6] = *b" N7LEM";
     let recv_seq_num = 1;
     let poll = true;
     let send_seq_num = 2;
     let pid = Pid::NoL3;
-    let data = "Hello world";
+
+    let mut data: [u8; 171] = [0u8; 171];
+    let data_str = "Hello world".as_bytes();
+    data[..data_str.len()].copy_from_slice(data_str);
 
     let actual_output: [u8; 191] = Packet::pack_to_ax25(
         dest_callsign,
@@ -49,16 +52,59 @@ fn test_ax25_pack() {
 
     match parsed {
         Ok(parsed) => {
-            assert_eq!(dest_callsign, parsed.destination.callsign);
-            assert_eq!(source_callsign, parsed.source.callsign);
+            assert_eq!(dest_callsign, parsed.destination.callsign.as_bytes());
+            assert_eq!(source_callsign, parsed.source.callsign.as_bytes());
 
             let mut data_bytes = Bytes::<174>::new();
-            data_bytes.extend(&data.as_bytes());
+            data_bytes.extend(&data);
             data_bytes.push(126);
             assert_eq!(Vec::from(data_bytes.bytes), parsed.to_bytes()[16..]);
         }
         Err(_) => {}
     }
+}
+
+#[test]
+fn test_fx25() {
+    let dest_callsign = *b"NJ7P  ";
+    let source_callsign = *b"N7LEM ";
+    let recv_seq_num = 1;
+    let poll = true;
+    let send_seq_num = 2;
+    let pid = Pid::NoL3;
+
+    let mut data: [u8; 171] = [0; 171];
+    let data_str = "Hello world".as_bytes();
+    data[..data_str.len()].copy_from_slice(data_str);
+
+    let packet = Packet::pack_to_ax25(
+        dest_callsign,
+        source_callsign,
+        recv_seq_num,
+        poll,
+        send_seq_num,
+        pid,
+        data,
+    );
+    let packet_control = packet.control.clone();
+
+    let mut fx25_packet = packet.pack_to_fx25();
+
+    fx25_packet[0] ^= 0xFF;
+    fx25_packet[10] ^= 0xFF;
+    fx25_packet[50] ^= 0xFF;
+    fx25_packet[67] ^= 0xFF;
+
+    let decoded = Packet::decode_fx25(fx25_packet);
+
+    assert!(decoded.is_ok());
+
+    let decoded = decoded.unwrap();
+    assert_eq!(decoded.source_addr.callsign, source_callsign);
+    assert_eq!(decoded.dest_addr.callsign, dest_callsign);
+    assert_eq!(decoded.control.to_byte(), packet_control.to_byte());
+    assert_eq!(decoded.pid as u8, pid as u8);
+    assert_eq!(decoded.payload.data, data);
 }
 
 #[test]
@@ -171,7 +217,7 @@ fn test_crc() {
     assert_eq!(crc, 0x6F91);
 }
 
-#[cfg(feature = "fuzz")]
+// #[cfg(feature = "fuzz")]
 mod fuzzing {
     use crate::gf;
     use rand::{
@@ -287,6 +333,8 @@ mod fuzzing {
 
     #[test]
     fn fuzz_reed_solomon() {
+        let mut rng = rand::thread_rng();
+
         for x in 0..255 {
             let mut message: [u8; 191] = [0u8; 191];
             for i in 0..191 {
@@ -300,8 +348,8 @@ mod fuzzing {
 
             let mut encoded = encoder.encode(&message[..]);
 
-            for i in 0..=x {
-                encoded[i] ^= 0xFF;
+            for _ in 0..=x {
+                encoded[rng.gen_range(0..255)] ^= 0xFF;
             }
 
             let known_errors = [0];
@@ -311,7 +359,9 @@ mod fuzzing {
                 assert!(decoded.is_ok());
                 assert_eq!(decoded.unwrap().data(), message);
             } else {
-                assert!(decoded.is_err());
+                if decoded.is_ok() {
+                    assert_eq!(decoded.unwrap().data(), message);
+                }
             }
         }
     }
@@ -321,27 +371,25 @@ mod fuzzing {
         use crate::test::{Bytes, Packet, Pid};
 
         for _ in 0..100 {
-            let dest_callsign = (0..6)
-                .map(|_| {
-                    let idx = random::<u8>() % 36;
-                    if idx < 10 {
-                        (b'0' + idx) as char
-                    } else {
-                        (b'A' + (idx - 10)) as char
-                    }
-                })
-                .collect::<String>();
+            let mut dest_callsign: [u8; 6] = [0; 6];
+            for i in 0..6 {
+                let idx = random::<u8>() % 36;
+                if idx < 10 {
+                    dest_callsign[i] = (b'0' + idx) as u8;
+                } else {
+                    dest_callsign[i] = (b'A' + (idx - 10)) as u8;
+                }
+            }
 
-            let source_callsign = (0..6)
-                .map(|_| {
-                    let idx = random::<u8>() % 36;
-                    if idx < 10 {
-                        (b'0' + idx) as char
-                    } else {
-                        (b'A' + (idx - 10)) as char
-                    }
-                })
-                .collect::<String>();
+            let mut source_callsign: [u8; 6] = [0; 6];
+            for i in 0..6 {
+                let idx = random::<u8>() % 36;
+                if idx < 10 {
+                    source_callsign[i] = (b'0' + idx) as u8;
+                } else {
+                    source_callsign[i] = (b'A' + (idx - 10)) as u8;
+                }
+            }
 
             let recv_seq_num = random::<u8>() % 8;
             let poll = random::<bool>();
@@ -355,13 +403,16 @@ mod fuzzing {
             let mut rng = rand::thread_rng();
             let length = rng.gen_range(0..171);
 
-            let data = &(0..length)
-                .map(|_| rng.gen_range(32..127) as u8 as char)
-                .collect::<String>();
+            let mut data: [u8; 171] = [0; 171];
+            data[0..length].copy_from_slice(
+                &(0..length)
+                    .map(|_| rng.gen_range(32..127) as u8)
+                    .collect::<Vec<u8>>(),
+            );
 
             let actual_output: [u8; 191] = Packet::pack_to_ax25(
-                &dest_callsign,
-                &source_callsign,
+                dest_callsign,
+                source_callsign,
                 recv_seq_num,
                 poll,
                 send_seq_num,
@@ -372,7 +423,6 @@ mod fuzzing {
 
             let mut to_parse = actual_output.clone();
 
-            let mut removed_count = 0;
             for i in (0..to_parse.len()).rev() {
                 if to_parse[i] == 0x7E {
                     to_parse[i - 2] = 0x7E;
@@ -387,15 +437,100 @@ mod fuzzing {
 
             match parsed {
                 Ok(parsed) => {
-                    assert_eq!(dest_callsign, parsed.destination.callsign);
-                    assert_eq!(source_callsign, parsed.source.callsign);
+                    assert_eq!(dest_callsign, parsed.destination.callsign.as_bytes());
+                    assert_eq!(source_callsign, parsed.source.callsign.as_bytes());
 
                     let mut data_bytes = Bytes::<174>::new();
-                    data_bytes.extend(&data.as_bytes());
+                    data_bytes.extend(&data);
                     data_bytes.push(0x7E);
                     assert_eq!(Vec::from(data_bytes.bytes), parsed.to_bytes()[16..]);
                 }
                 Err(_) => {}
+            }
+        }
+    }
+
+    #[test]
+    fn fuzz_fx25_pack() {
+        use crate::test::{Packet, Pid};
+
+        for x in 0..255 {
+            let mut dest_callsign: [u8; 6] = [0; 6];
+            for i in 0..6 {
+                let idx = random::<u8>() % 36;
+                if idx < 10 {
+                    dest_callsign[i] = (b'0' + idx) as u8;
+                } else {
+                    dest_callsign[i] = (b'A' + (idx - 10)) as u8;
+                }
+            }
+
+            let mut source_callsign: [u8; 6] = [0; 6];
+            for i in 0..6 {
+                let idx = random::<u8>() % 36;
+                if idx < 10 {
+                    source_callsign[i] = (b'0' + idx) as u8;
+                } else {
+                    source_callsign[i] = (b'A' + (idx - 10)) as u8;
+                }
+            }
+
+            let recv_seq_num = random::<u8>() % 8;
+            let poll = random::<bool>();
+            let send_seq_num = if recv_seq_num == 7 {
+                0
+            } else {
+                recv_seq_num + 1
+            };
+            let pid = Pid::NoL3;
+
+            let mut rng = rand::thread_rng();
+            let length = rng.gen_range(0..171);
+
+            let mut data: [u8; 171] = [0; 171];
+            data[0..length].copy_from_slice(
+                &(0..length)
+                    .map(|_| rng.gen_range(32..127) as u8)
+                    .collect::<Vec<u8>>(),
+            );
+
+            let packet = Packet::pack_to_ax25(
+                dest_callsign,
+                source_callsign,
+                recv_seq_num,
+                poll,
+                send_seq_num,
+                pid,
+                data,
+            );
+            let packet_control = packet.control.clone();
+
+            let mut fx25_packet = packet.pack_to_fx25();
+
+            for _ in 0..=x {
+                fx25_packet[rng.gen_range(0..255)] ^= 0xFF;
+            }
+
+            let decoded = Packet::decode_fx25(fx25_packet);
+
+            if x < 32 {
+                assert!(decoded.is_ok());
+
+                let decoded = decoded.unwrap();
+                assert_eq!(decoded.source_addr.callsign, source_callsign);
+                assert_eq!(decoded.dest_addr.callsign, dest_callsign);
+                assert_eq!(decoded.control.to_byte(), packet_control.to_byte());
+                assert_eq!(decoded.pid as u8, pid as u8);
+                assert_eq!(decoded.payload.data, data);
+            } else {
+                if decoded.is_ok() {
+                    let decoded = decoded.unwrap();
+                    assert_eq!(decoded.source_addr.callsign, source_callsign);
+                    assert_eq!(decoded.dest_addr.callsign, dest_callsign);
+                    assert_eq!(decoded.control.to_byte(), packet_control.to_byte());
+                    assert_eq!(decoded.pid as u8, pid as u8);
+                    assert_eq!(decoded.payload.data, data);
+                }
             }
         }
     }

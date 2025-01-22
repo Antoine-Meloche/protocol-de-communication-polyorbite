@@ -1,4 +1,5 @@
 use crc_0x8810::update;
+use reed_solomon::{Decoder, Encoder};
 
 /// A representation of an AX.25 address, consisting of a callsign and an SSID.
 ///
@@ -13,15 +14,15 @@ use crc_0x8810::update;
 /// ```
 /// use comms::pack::Address;
 ///
-/// let addr = Address::new("NOCALL", 0, true, false);
+/// let addr = Address::new(*b"NOCALL", 0, true, false);
 /// ```
-pub struct Address<'a> {
-    pub callsign: &'a str,
+pub struct Address {
+    pub callsign: [u8; 6],
     pub ssid: u8, // MAX 4 bits
     pub bytes: [u8; 7],
 }
 
-impl<'a> Address<'a> {
+impl Address {
     /// A function to create an AX.25 adress from a callsign and an ssid.
     ///
     /// # Arguments
@@ -35,13 +36,9 @@ impl<'a> Address<'a> {
     /// ```
     /// use comms::pack::Address;
     ///
-    /// let addr = Address::new("NOCALL", 0, true, false);
+    /// let addr = Address::new(*b"NOCALL", 0, true, false);
     /// ```
-    pub fn new(callsign: &'a str, ssid: u8, command: bool, last_addr: bool) -> Self {
-        if callsign.chars().count() > 6 {
-            // panic!("The callsign cannot be longer than 6 characters"); // FIXME: remove panic!
-        }
-
+    pub fn new(mut callsign: [u8; 6], ssid: u8, command: bool, last_addr: bool) -> Self {
         if ssid > 15 {
             // panic!(
             //     "The destination SSID is larger than the allowed amount (15): {} > 15",
@@ -49,25 +46,20 @@ impl<'a> Address<'a> {
             // ); // FIXME: remove panic!
         }
 
-        let mut callsign_bytes: [u8; 6] = [32; 6];
-        for (i, char) in callsign.chars().enumerate() {
-            callsign_bytes[i] = char as u8;
-        }
-
-        for i in 0..callsign_bytes.len() {
-            callsign_bytes[i] <<= 1;
+        for i in 0..callsign.len() {
+            callsign[i] <<= 1;
         }
 
         let ssid_byte: u8 =
             (ssid << 1) | 0b01100000 | (last_addr as u8) | (((command ^ last_addr) as u8) << 7);
 
         let mut bytes: Bytes<7> = Bytes::<7>::new();
-        bytes.extend(&callsign_bytes);
+        bytes.extend(&callsign);
         bytes.push(ssid_byte);
 
         return Address {
-            callsign: callsign,
-            ssid: ssid,
+            callsign,
+            ssid,
             bytes: bytes.bytes,
         };
     }
@@ -80,6 +72,7 @@ impl<'a> Address<'a> {
 /// - `poll`/`poll_final`: A `bool` representing if the current packet requires an immediate reponse.
 /// - `byte`(modulo 8): A `u8` containing the byte representation of the control field
 /// - `bytes`(modulo 128): A `u8` array containing the byte representation of the control field
+#[derive(Clone, Copy)]
 pub enum Control {
     IFrame {
         recv_seq_num: u8, // 3 bits
@@ -142,10 +135,10 @@ impl Control {
         let byte: u8 = (recv_seq_num << 5) | (poll_bit << 4) | (send_seq_num << 1) | 0b0;
 
         return Control::IFrame {
-            recv_seq_num: recv_seq_num,
-            poll: poll,
-            send_seq_num: send_seq_num,
-            byte: byte,
+            recv_seq_num,
+            poll,
+            send_seq_num,
+            byte,
         };
     }
 
@@ -180,10 +173,10 @@ impl Control {
         let byte: u8 = (recv_seq_num << 5) | (poll_final_bit << 4) | (supervisory << 2) | 0b01;
 
         return Control::SFrame {
-            recv_seq_num: recv_seq_num,
-            poll_final: poll_final,
-            supervisory: supervisory,
-            byte: byte,
+            recv_seq_num,
+            poll_final,
+            supervisory,
+            byte,
         };
     }
 
@@ -211,9 +204,9 @@ impl Control {
         let byte: u8 = (frame_mod_p1 << 5) | (poll_final_bit << 4) | (frame_mod_p2 << 2) | 0b11;
 
         return Control::UFrame {
-            frame_mod: frame_mod,
-            poll_final: poll_final,
-            byte: byte,
+            frame_mod,
+            poll_final,
+            byte,
         };
     }
 
@@ -287,6 +280,15 @@ impl Control {
     //         bytes: bytes,
     //     };
     // }
+
+    pub fn to_byte(self: Self) -> Option<u8> {
+        match self {
+            Self::IFrame { byte, .. } => Some(byte),
+            Self::UFrame { byte, .. } => Some(byte),
+            Self::SFrame { byte, .. } => Some(byte),
+            // _ => None,
+        }
+    }
 }
 
 /// A byte-adjacent structure representing the PID field to determine the L3 network protocol being used in the transmission.
@@ -298,7 +300,7 @@ impl Control {
 ///
 /// let pid = Pid::RFC1144C;
 /// ```
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum Pid {
     ISO8208 = 0x01,
@@ -317,9 +319,8 @@ pub enum Pid {
     EscChar = 0xFF,
 }
 
-pub struct Payload<'a> {
-    pub length: u64,
-    pub data: &'a str,
+pub struct Payload {
+    pub data: [u8; 171],
 }
 
 #[derive(Clone, Copy)]
@@ -342,6 +343,54 @@ impl CorrelationTag {
     fn to_bytes(&self) -> [u8; 8] {
         return (*self as u64).to_ne_bytes();
     }
+
+    fn find_closest_tag(received_bytes: &[u8]) -> Option<CorrelationTag> {
+        let mut closest_tag = None;
+        let mut min_distance = u64::MAX;
+
+        for tag in [
+            CorrelationTag::Tag01,
+            CorrelationTag::Tag02,
+            CorrelationTag::Tag03,
+            CorrelationTag::Tag04,
+            CorrelationTag::Tag05,
+            CorrelationTag::Tag06,
+            CorrelationTag::Tag07,
+            CorrelationTag::Tag08,
+            CorrelationTag::Tag09,
+            CorrelationTag::Tag0A,
+            CorrelationTag::Tag0B,
+        ] {
+            match hamming_distance(&received_bytes, &tag.to_bytes()) {
+                Some(distance) => {
+                    if distance < min_distance {
+                        min_distance = distance;
+                        closest_tag = Some(tag);
+                    }
+                }
+                None => break,
+            }
+        }
+
+        return closest_tag;
+    }
+}
+
+fn hamming_distance(bytes1: &[u8], bytes2: &[u8]) -> Option<u64> {
+    if bytes1.len() != bytes2.len() {
+        return None;
+    }
+
+    let len = bytes1.len();
+    let mut count = 0;
+
+    for i in 0..len {
+        if bytes1[i] != bytes2[i] {
+            count += 1;
+        }
+    }
+
+    return Some(count);
 }
 
 pub fn compute_crc(bytes: &[u8]) -> u16 {
@@ -391,38 +440,33 @@ impl<const N: usize> Bytes<N> {
     }
 }
 
-pub struct Packet<'a> {
-    pub dest_addr: Address<'a>,
-    pub source_addr: Address<'a>,
+pub struct Packet {
+    pub dest_addr: Address,
+    pub source_addr: Address,
     pub control: Control,
     pub pid: Pid,
-    pub payload: Payload<'a>,
+    pub payload: Payload,
     pub bytes: [u8; 191],
 }
 
-impl<'a> Packet<'a> {
+impl Packet {
     pub fn pack_to_ax25(
-        dest_callsign: &'a str,
-        source_callsign: &'a str,
+        dest_callsign: [u8; 6],
+        source_callsign: [u8; 6],
         recv_seq_num: u8,
         poll: bool,
         send_seq_num: u8,
         pid: Pid,
-        data: &'a str,
-    ) -> Packet<'a> {
-        let dest_addr: Address = Address::new(dest_callsign.into(), 0, true, false);
-        let source_addr: Address = Address::new(source_callsign.into(), 0, true, true);
+        data: [u8; 171],
+    ) -> Packet {
+        let dest_addr: Address = Address::new(dest_callsign, 0, true, false);
+        let source_addr: Address = Address::new(source_callsign, 0, true, true);
 
         let control: Control = Control::new_iframe(recv_seq_num, poll, send_seq_num);
 
-        let payload: Payload = Payload {
-            length: data.len() as u64,
-            data: data,
-        };
+        let payload: Payload = Payload { data };
 
-        let payload_bytes = payload.data.as_bytes();
-
-        let crc = compute_crc(payload_bytes).to_be_bytes();
+        let crc = compute_crc(&payload.data).to_be_bytes();
 
         let mut bytes: Bytes<191> = Bytes::<191>::new();
 
@@ -437,16 +481,16 @@ impl<'a> Packet<'a> {
         };
 
         bytes.push(pid as u8);
-        bytes.extend(&payload_bytes);
+        bytes.extend(&payload.data);
         bytes.extend(&crc);
         bytes.push(0x7E); // AX.25 closing flag
 
-        let packet: Packet<'a> = Packet {
-            dest_addr: dest_addr,
-            source_addr: source_addr,
-            control: control,
-            pid: pid,
-            payload: payload,
+        let packet = Packet {
+            dest_addr,
+            source_addr,
+            control,
+            pid,
+            payload,
             bytes: bytes.bytes,
         };
 
@@ -463,12 +507,11 @@ impl<'a> Packet<'a> {
 
         bytes.extend(&CorrelationTag::Tag09.to_bytes());
 
-        // let rs: ReedSolomon = ReedSolomon::new();
+        let ecc_len = 64;
+        let encoder = Encoder::new(ecc_len);
 
-        let mut ax25_packet_bytes: Bytes<255> = Bytes::<255>::new();
-        ax25_packet_bytes.extend(&self.bytes);
-
-        // bytes.extend(&rs.encode(ax25_packet_bytes.bytes));
+        let encoded = encoder.encode(&self.bytes);
+        bytes.extend(&encoded[..]);
 
         bytes.push(0x7E); // FX.25 Closing flags
         bytes.push(0x7E);
@@ -478,16 +521,151 @@ impl<'a> Packet<'a> {
         return bytes.bytes;
     }
 
-    pub fn decode_fx25(bytes: [u8; 271]) -> [u8; 191] {
-        // let rs: ReedSolomon = ReedSolomon::new();
+    pub fn decode_fx25(bytes: [u8; 271]) -> Result<Packet, ()> {
+        let ecc_len = 64;
+        let decoder = Decoder::new(ecc_len);
 
-        let mut correlation_tag: Bytes<8> = Bytes::<8>::new();
-        correlation_tag.extend(&bytes[4..12]);
-
-        if correlation_tag.bytes == CorrelationTag::Tag09.to_bytes() {
-            // return rs.decode(bytes);
+        let correlation_tag = CorrelationTag::find_closest_tag(&bytes[4..12]);
+        if correlation_tag.is_none() {
+            return Err(());
         }
 
-        return [0u8; 191];
+        if correlation_tag.unwrap() as u64 != CorrelationTag::Tag09 as u64 {
+            return Err(());
+        }
+
+        let known_errors = [0];
+        let decoded = decoder.correct(&bytes[12..267], Some(&known_errors));
+
+        if decoded.is_err() {
+            return Err(());
+        }
+
+        if let Some(fields) = Fx25Fields::parse(decoded.unwrap().data()) {
+            let dest_callsign = fields.dest_callsign;
+            let source_callsign = fields.source_callsign;
+            let recv_seq_num = fields.recv_seq_num;
+            let poll = fields.poll;
+            let send_seq_num = fields.send_seq_num;
+            let pid = fields.pid;
+            let data = fields.data;
+            let decoded_crc = fields.crc;
+
+            let mut dest_callsign_bytes: [u8; 6] = [0; 6];
+            dest_callsign_bytes.copy_from_slice(&dest_callsign[0..6]);
+            for i in 0..6 {
+                dest_callsign_bytes[i] >>= 1;
+            }
+
+            let dest_addr = Address {
+                callsign: dest_callsign_bytes,
+                ssid: dest_callsign[6],
+                bytes: dest_callsign,
+            };
+
+            let mut source_callsign_bytes: [u8; 6] = [0; 6];
+            source_callsign_bytes.copy_from_slice(&source_callsign[0..6]);
+            for i in 0..6 {
+                source_callsign_bytes[i] >>= 1;
+            }
+
+            let source_addr = Address {
+                callsign: source_callsign_bytes,
+                ssid: source_callsign[6],
+                bytes: source_callsign,
+            };
+
+            let payload = Payload { data };
+
+            // Check data with CRC
+            let crc = compute_crc(&data);
+            if crc.to_be_bytes() != decoded_crc {
+                return Err(());
+            }
+
+            let mut bytes: [u8; 191] = [0; 191];
+            bytes.copy_from_slice(decoded.unwrap().data());
+
+            let control = Control::new_iframe(recv_seq_num, poll, send_seq_num);
+
+            let packet = Packet {
+                dest_addr,
+                source_addr,
+                control,
+                pid,
+                payload,
+                bytes,
+            };
+
+            return Ok(packet);
+        }
+
+        return Err(());
+    }
+}
+
+pub struct Fx25Fields {
+    source_callsign: [u8; 7], // Source callsign including SSID
+    dest_callsign: [u8; 7],   // Destination callsign including SSID
+    recv_seq_num: u8,         // Receive sequence number (N(R))
+    poll: bool,               // Poll bit
+    send_seq_num: u8,         // Send sequence number (N(S))
+    pid: Pid,                 // Protocol ID
+    data: [u8; 171],          // Information field
+    crc: [u8; 2],             // CRC bytes
+}
+
+impl Fx25Fields {
+    pub fn parse(packet: &[u8]) -> Option<Self> {
+        if packet.len() < 15 {
+            return None;
+        }
+
+        let mut dest = [0u8; 7];
+        let mut source = [0u8; 7];
+
+        dest.copy_from_slice(&packet[1..8]);
+        source.copy_from_slice(&packet[8..15]);
+
+        let control = packet[15];
+
+        let recv_seq_num = (control >> 5) & 0x07; // N(R) is bits 5-7
+        let poll = (control & 0x10) != 0; // P/F is bit 4
+        let send_seq_num = (control >> 1) & 0x07; // N(S) is bits 1-3
+
+        let pid = match packet[16] {
+            0x01 => Pid::ISO8208,
+            0x06 => Pid::RFC1144C,
+            0x07 => Pid::RFC1144U,
+            0x08 => Pid::SegFrag,
+            0xc3 => Pid::TEXNET,
+            0xc4 => Pid::LinkQuality,
+            0xca => Pid::AppleTalk,
+            0xcb => Pid::AppleTalkARP,
+            0xcc => Pid::ARPAIP,
+            0xcd => Pid::ARPAAR,
+            0xce => Pid::FlexNet,
+            0xcf => Pid::NETROM,
+            0xf0 => Pid::NoL3,
+            0xff => Pid::EscChar,
+            _ => Pid::NoL3,
+        };
+
+        let mut data: [u8; 171] = [0; 171];
+        data.copy_from_slice(&packet[17..188]);
+
+        let mut crc: [u8; 2] = [0; 2];
+        crc.copy_from_slice(&packet[188..190]);
+
+        Some(Fx25Fields {
+            dest_callsign: dest,
+            source_callsign: source,
+            recv_seq_num,
+            poll,
+            send_seq_num,
+            pid,
+            data,
+            crc,
+        })
     }
 }
