@@ -217,7 +217,7 @@ fn test_crc() {
     assert_eq!(crc, 0x6F91);
 }
 
-// #[cfg(feature = "fuzz")]
+#[cfg(feature = "fuzz")]
 mod fuzzing {
     use crate::gf;
     use rand::{
