@@ -5,6 +5,7 @@ use gf256;
 use reed_solomon::{Decoder, Encoder};
 
 use pack::{compute_crc, Bytes, Packet, Pid};
+use sign::{sign_data, verify_data};
 
 use super::*;
 
@@ -217,12 +218,101 @@ fn test_crc() {
     assert_eq!(crc, 0x6F91);
 }
 
+#[test]
+fn test_sign_data() {
+    let data = b"Hello, World!";
+    let key = b"0123456789abcdef";
+
+    let signed = sign_data(data, key);
+    assert_eq!(signed.len(), data.len() + 50);
+
+    assert_eq!(&signed[..data.len()], data);
+    assert!(verify_data(&signed, key));
+}
+
+#[test]
+fn test_sign_empty() {
+    let data = b"";
+    let key = b"0123456789abcdef";
+
+    let signed = sign_data(data, key);
+    assert_eq!(signed.len(), 50);
+    assert!(verify_data(&signed, key));
+}
+
+#[test]
+fn test_sign_large() {
+    let data = [0xFF; 1024];
+    let key = b"0123456789abcdef";
+
+    let signed = sign_data(&data, key);
+    assert_eq!(signed.len(), data.len() + 50);
+    assert!(verify_data(&signed, key))
+}
+
+#[test]
+fn test_sign_wrong_key() {
+    let data = b"Hello, World!";
+    let key = b"0123456789abcdef";
+    let dec_key = b"thisthewrong_key";
+
+    let signed = sign_data(data, key);
+    assert_eq!(signed.len(), data.len() + 50);
+
+    assert_eq!(&signed[..data.len()], data);
+    assert!(!verify_data(&signed, dec_key));
+}
+
+#[test]
+fn test_sign_tampered_data() {
+    let data = b"";
+    let key = b"0123456789abcdef";
+
+    let mut signed = sign_data(data, key);
+
+    signed[0] ^= 0xFF;
+
+    assert!(!verify_data(&signed, key));
+}
+
+#[test]
+fn test_sign_tampered_hash() {
+    let data = b"";
+    let key = b"0123456789abcdef";
+
+    let mut signed = sign_data(data, key);
+
+    signed[data.len()] ^= 0xFF;
+
+    assert!(!verify_data(&signed, key));
+}
+
+#[test]
+fn test_sign_tampered_nonce() {
+    let data = b"";
+    let key = b"0123456789abcdef";
+
+    let mut signed = sign_data(data, key);
+
+    signed[data.len() + 16] ^= 0xFF;
+
+    assert!(!verify_data(&signed, key));
+}
+
+#[test]
+fn test_verify_too_short_sign() {
+    let key = b"0123456789abcdef";
+    let too_short = [0u8; 49];
+    assert!(!verify_data(&too_short, key));
+}
+
 #[cfg(feature = "fuzz")]
 mod fuzzing {
     use crate::gf;
+    use crate::test::{sign_data, verify_data};
     use rand::{
         distributions::{Distribution, Standard},
-        random, Rng,
+        random, thread_rng, Rng, RngCore,
     };
     use std::fmt::Debug;
 
@@ -242,7 +332,7 @@ mod fuzzing {
         pub fn fuzz_function<T, O>(&self, test_fn: impl Fn(T) -> O + std::panic::RefUnwindSafe)
         where
             T: Debug + Clone + std::panic::RefUnwindSafe,
-            Standard: Distribution<T>, // Fix: Ensure T can be generated using Standard distribution
+            Standard: Distribution<T>,
             O: Debug,
         {
             let mut rng = rand::thread_rng();
@@ -532,6 +622,53 @@ mod fuzzing {
                     assert_eq!(decoded.payload.data, data);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn fuzz_sign_data() {
+        let mut rng = thread_rng();
+
+        for _ in 0..FUZZNUM {
+            let data_len = rng.gen_range(0..2048);
+
+            let mut data = vec![0u8; data_len as usize];
+            rng.fill_bytes(&mut data);
+
+            let mut key = [0u8; 16];
+            rng.fill_bytes(&mut key);
+
+            let signed = sign_data(&data, &key);
+
+            assert_eq!(signed.len(), data_len as usize + 50);
+            assert_eq!(&signed[..data_len as usize], &data);
+            assert!(verify_data(&signed, &key));
+
+            let mut tampered = signed.clone();
+            let tamper_pos = rng.gen_range(0..tampered.len());
+            tampered[tamper_pos] ^= 0xFF;
+
+            assert!(!verify_data(&tampered, &key));
+
+            let mut wrong_key = key.clone();
+            wrong_key[rng.gen_range(0..16)] ^= 0xFF;
+            assert!(!verify_data(&signed, &wrong_key));
+        }
+    }
+
+    #[test]
+    fn fuzz_invalid_sign_data() {
+        let mut rng = thread_rng();
+
+        for _ in 0..FUZZNUM {
+            let len = rng.gen_range(0..2048);
+            let mut data = vec![0u8; len];
+            rng.fill_bytes(&mut data);
+
+            let mut key = [0u8; 16];
+            rng.fill_bytes(&mut key);
+
+            assert!(!verify_data(&data, &key));
         }
     }
 }
