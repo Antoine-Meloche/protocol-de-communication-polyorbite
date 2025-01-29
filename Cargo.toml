@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["ground-station"]
-ground-station = []
+ground-station = ["dep:rand"]
 cubesat = []
 fuzz = []
 
@@ -13,10 +13,11 @@ fuzz = []
 crate-type = ["rlib"]
 
 [dev-dependencies]
-gf256 = "0.3.0"
 rand = "0.8.5"
+gf256 = "0.3.0"
 reed-solomon-erasure = "6.0.0"
 ax25 = "0.3.0"
+sha256 = "1.5.0"
 
 [profile.release]
 strip = true
@@ -26,5 +27,8 @@ codegen-units = 1
 panic = "abort"
 
 [dependencies]
+rand = { version = "0.8.5", optional = true }
 crc-0x8810 = "0.1.0"
 reed-solomon = "0.2"
+ascon-aead = "0.4.2"
+md5 = "0.7.0"

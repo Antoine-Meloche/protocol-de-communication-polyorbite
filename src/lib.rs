@@ -2,6 +2,7 @@
 
 pub mod gf;
 pub mod pack;
+pub mod sign;
 
 extern crate reed_solomon;
 
@@ -28,7 +29,11 @@ mod test;
 pub mod cubesat {
     use crate::pack::{Packet, Pid};
 
-    pub fn load_to_transmit(dest_callsign: &str, source_callsign: &str, data: &str) -> [u8; 271] {
+    pub fn load_to_transmit(
+        dest_callsign: [u8; 6],
+        source_callsign: [u8; 6],
+        data: [u8; 171],
+    ) -> [u8; 271] {
         let ax25_packet: Packet =
             Packet::pack_to_ax25(dest_callsign, source_callsign, 1, true, 2, Pid::NoL3, data);
         let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
