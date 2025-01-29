@@ -12,12 +12,29 @@ mod ground_station {
 
     const SOURCE_CALLSIGN: [u8; 6] = *b"HFG5  ";
 
-    pub fn send_data(dest_callsign: [u8; 6], data: [u8; 171]) {
-        let ax25_packet: Packet =
-            Packet::pack_to_ax25(dest_callsign, SOURCE_CALLSIGN, 1, true, 2, Pid::NoL3, data);
-        let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
+    pub fn send_data(dest_callsign: [u8; 6], data: &[u8]) {
+        let packet_count: usize = data.len() / 171 + 1;
 
-        println!("{:?}", fx25_bytes); // FIXME: replace with sending logic
+        for i in 0..packet_count {
+            let recv_seq_num = (i % 8) as u8;
+            let send_seq_num = ((i + 1) % 8) as u8;
+
+            let mut packet_data = [0u8; 171];
+            packet_data.copy_from_slice(&data[(171 * i)..(171 * (i + 1))]);
+
+            let ax25_packet: Packet = Packet::pack_to_ax25(
+                dest_callsign,
+                SOURCE_CALLSIGN,
+                recv_seq_num,
+                i == packet_count - 1, // Poll bit true when last packet of command
+                send_seq_num,
+                Pid::NoL3,
+                packet_data,
+            );
+            let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
+
+            println!("{:?}", fx25_bytes); // FIXME: replace with sending logic
+        }
     }
 }
 
