@@ -8,7 +8,10 @@ extern crate reed_solomon;
 
 #[cfg(feature = "ground-station")]
 mod ground_station {
-    use crate::pack::{Packet, Pid};
+    use crate::{
+        pack::{Packet, Pid},
+        sign::sign_data,
+    };
 
     const SOURCE_CALLSIGN: [u8; 6] = *b"HFG5  ";
 
@@ -33,8 +36,16 @@ mod ground_station {
             );
             let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
 
-            println!("{:?}", fx25_bytes); // FIXME: replace with sending logic
+            println!("{:?}", fx25_bytes); // FIXME: replace with sending logid
         }
+
+        let recv_seq_num = (packet_count % 8) as u8;
+        let send_seq_num = 0u8;
+
+        let mut packet_data = [0u8; 171];
+
+        let key_raw = b"0123456789abcdef"; // FIXME: replace with hardcoded private key
+        let verif = sign_data(data, key_raw);
     }
 }
 

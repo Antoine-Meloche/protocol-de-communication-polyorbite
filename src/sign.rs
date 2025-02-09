@@ -9,11 +9,8 @@ use rand::random;
 use crate::pack::compute_crc;
 
 #[cfg(feature = "ground-station")]
-pub fn sign_data(data: &[u8], key_raw: &[u8; 16]) -> Vec<u8> {
-    use crate::pack::compute_crc;
-
-    let mut result = Vec::with_capacity(data.len() + 48);
-    result.extend_from_slice(&data);
+pub fn sign_data(data: &[u8], key_raw: &[u8; 16]) -> [u8; 50] {
+    let mut result = [0u8; 50];
 
     let hash: [u8; 16] = md5::compute(data).0;
     let crc: [u8; 2] = compute_crc(data).to_be_bytes();
@@ -30,25 +27,22 @@ pub fn sign_data(data: &[u8], key_raw: &[u8; 16]) -> Vec<u8> {
 
     let ciphertext = cipher.encrypt(nonce_ref, plaintext.as_ref()).unwrap();
 
-    result.extend_from_slice(&ciphertext);
-    result.extend_from_slice(&nonce);
+    result[0..34].copy_from_slice(&ciphertext);
+    result[34..].copy_from_slice(&nonce);
 
     return result;
 }
 
-pub fn verify_data(signed_data: &[u8], key_raw: &[u8; 16]) -> bool {
-    if signed_data.len() < 50 {
+pub fn verify_data(signed_data: &[u8], signature: [u8; 50], key_raw: &[u8; 16]) -> bool {
+    if signed_data.len() == 50 {
         return false;
     }
 
-    let data_len = signed_data.len() - 50;
-    let data = &signed_data[..data_len];
+    let encrypted_hash = &signature[0..34];
+    let nonce = &signature[34..];
 
-    let encrypted_hash = &signed_data[data_len..data_len + 34];
-    let nonce = &signed_data[data_len + 34..];
-
-    let expected_hash: [u8; 16] = md5::compute(data).0;
-    let expected_crc: [u8; 2] = compute_crc(data).to_be_bytes();
+    let expected_hash: [u8; 16] = md5::compute(signed_data).0;
+    let expected_crc: [u8; 2] = compute_crc(signed_data).to_be_bytes();
 
     let key = Key::<Ascon128>::from_slice(key_raw);
     let cipher = Ascon128::new(key);

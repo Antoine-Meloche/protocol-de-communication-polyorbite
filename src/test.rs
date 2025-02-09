@@ -220,14 +220,16 @@ fn test_crc() {
 
 #[test]
 fn test_sign_data() {
-    let data = b"Hello, World!";
+    let data: [u8; 16] = [
+        0x31, 0x6f, 0xaf, 0x73, 0x44, 0x02, 0x00, 0x00, 0x43, 0x42, 0x64, 0xff, 0xf1, 0xca, 0xcc,
+        0x45,
+    ];
     let key = b"0123456789abcdef";
 
-    let signed = sign_data(data, key);
-    assert_eq!(signed.len(), data.len() + 50);
+    let signed = sign_data(&data, key);
+    assert_eq!(signed.len(), 50);
 
-    assert_eq!(&signed[..data.len()], data);
-    assert!(verify_data(&signed, key));
+    assert!(verify_data(&data, signed, key));
 }
 
 #[test]
@@ -237,7 +239,7 @@ fn test_sign_empty() {
 
     let signed = sign_data(data, key);
     assert_eq!(signed.len(), 50);
-    assert!(verify_data(&signed, key));
+    assert!(verify_data(data, signed, key));
 }
 
 #[test]
@@ -246,8 +248,8 @@ fn test_sign_large() {
     let key = b"0123456789abcdef";
 
     let signed = sign_data(&data, key);
-    assert_eq!(signed.len(), data.len() + 50);
-    assert!(verify_data(&signed, key))
+    assert_eq!(signed.len(), 50);
+    assert!(verify_data(&data, signed, key))
 }
 
 #[test]
@@ -257,10 +259,9 @@ fn test_sign_wrong_key() {
     let dec_key = b"thisthewrong_key";
 
     let signed = sign_data(data, key);
-    assert_eq!(signed.len(), data.len() + 50);
+    assert_eq!(signed.len(), 50);
 
-    assert_eq!(&signed[..data.len()], data);
-    assert!(!verify_data(&signed, dec_key));
+    assert!(!verify_data(data, signed, dec_key));
 }
 
 #[test]
@@ -272,7 +273,7 @@ fn test_sign_tampered_data() {
 
     signed[0] ^= 0xFF;
 
-    assert!(!verify_data(&signed, key));
+    assert!(!verify_data(data, signed, key));
 }
 
 #[test]
@@ -284,7 +285,7 @@ fn test_sign_tampered_hash() {
 
     signed[data.len()] ^= 0xFF;
 
-    assert!(!verify_data(&signed, key));
+    assert!(!verify_data(data, signed, key));
 }
 
 #[test]
@@ -296,14 +297,7 @@ fn test_sign_tampered_nonce() {
 
     signed[data.len() + 16] ^= 0xFF;
 
-    assert!(!verify_data(&signed, key));
-}
-
-#[test]
-fn test_verify_too_short_sign() {
-    let key = b"0123456789abcdef";
-    let too_short = [0u8; 49];
-    assert!(!verify_data(&too_short, key));
+    assert!(!verify_data(data, signed, key));
 }
 
 #[cfg(feature = "fuzz")]
