@@ -10,6 +10,7 @@ cubesat = []
 fuzz = []
 
 [lib]
+path = "src/lib.rs"
 crate-type = ["rlib"]
 
 [dev-dependencies]

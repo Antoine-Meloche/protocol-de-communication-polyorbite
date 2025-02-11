@@ -1,37 +1,72 @@
+//! # This module provides functionality for AX.25 and FX.25 packet encoding and decoding.
+//!
+//! AX.25 is an asynchronous link-layer protocol designed for amateur radio digital communications.
+//! FX.25 is a forward error correction layer that wraps AX.25 frames with correlation tags and Reed-Solomon encoding.
+//!
+//! The main components in this module are:
+//!
+//! - `Address`: A structure representing AX.25 addresses (callsign + SSID)
+//! - `Control`: An enum representing different types of AX.25 control fields (I-frames, S-frames, U-frames)
+//! - `Pid`: An enum representing protocol identifiers for different L3 protocols
+//! - `Packet`: The main structure for creating and decoding AX.25/FX.25 packets
+//! - `CorrelationTag`: Unique identifiers for FX.25 frames indicating the Reed-Solomon encoding parameters
+//!
+//! ## Example
+//! ```
+//! use comms::pack::{Packet, Pid};
+//!
+//! // Create and encode an AX.25 packet
+//! let packet = Packet::pack_to_ax25(
+//!     *b"NOCALL",  // destination callsign
+//!     *b"MYCALL",  // source callsign
+//!     0,           // receive sequence number
+//!     false,       // poll bit
+//!     0,           // send sequence number
+//!     Pid::NoL3,   // protocol ID
+//!     [0; 171]     // payload data
+//! );
+//!
+//! // Add FX.25 forward error correction
+//! let fx25_frame = packet.pack_to_fx25();
+//! ```
+
 use crc_0x8810::update;
 use reed_solomon::{Decoder, Encoder};
 
-/// A representation of an AX.25 address, consisting of a callsign and an SSID.
+/// # A representation of an AX.25 address, consisting of a callsign and an SSID.
 ///
-/// # Arguments
+/// ## Arguments
 /// - `callsign`: A `String` representing the station's callsign (up to 6 characters).
 /// - `ssid`: An unsigned 8-bit integer representing the SSID. Only the lower 4 bits are used.
 /// - `bytes`: A 7-byte array representing the encoded callsign and SSID in a format suitable for
 ///    AX.25 transmission. The first 6 bytes correspond to the callsign, and the 7th byte encodes the SSID
 ///    and control information.
 ///
-/// # Example
+/// ## Example
 /// ```
 /// use comms::pack::Address;
 ///
 /// let addr = Address::new(*b"NOCALL", 0, true, false);
 /// ```
 pub struct Address {
+    /// The station's callsign as a 6-byte array, with each byte left-shifted by 1
     pub callsign: [u8; 6],
-    pub ssid: u8, // MAX 4 bits
+    /// The SSID, using only the lower 4 bits (0-15)
+    pub ssid: u8,
+    /// The combined 7-byte array used for transmission, containing the encoded callsign and SSID
     pub bytes: [u8; 7],
 }
 
 impl Address {
-    /// A function to create an AX.25 adress from a callsign and an ssid.
+    /// # A function to create an AX.25 adress from a callsign and an ssid.
     ///
-    /// # Arguments
+    /// ## Arguments
     /// - `callsign`: A `String` representing the station's callsign (up to 6 characters)
     /// - `ssid`: A `u8` integer representing the SSID, only the first 4 bits are used therefore the ssid must be at most 15
     /// - `command`: A `bool` value indicating if the address is sending a command or a response
     /// - `last_addr`: A `bool` value indicating if the address is the last one in the list of receiver, repeaters and sender
     ///
-    /// # Example
+    /// ## Example
     /// Here is an example on creating an address with the `callsign` 'NOCALL', the `ssid` of '0', sending a command and being either a repeater address or a receiver address.
     /// ```
     /// use comms::pack::Address;
@@ -65,31 +100,45 @@ impl Address {
     }
 }
 
-/// A representatoin of the `control` byte/bytes in an AX.25 packet
+/// # A representatoin of the `control` byte/bytes in an AX.25 packet
 ///
-/// # Arguments
+/// ## Arguments
 /// The fields vary a lot between different types of frames, but each frame has at least the byte or bytes field which is used for the transmission of the frames. and the poll/final bool.
 /// - `poll`/`poll_final`: A `bool` representing if the current packet requires an immediate reponse.
 /// - `byte`(modulo 8): A `u8` containing the byte representation of the control field
 /// - `bytes`(modulo 128): A `u8` array containing the byte representation of the control field
 #[derive(Clone, Copy)]
 pub enum Control {
+    /// Information frame (I-frame) format that carries upper layer data
     IFrame {
+        /// Receive sequence number N(R) - 3 bits indicating the sequence number of the next expected frame
         recv_seq_num: u8, // 3 bits
-        poll: bool,       // 1 bit
+        /// Poll bit requesting immediate response from peer
+        poll: bool, // 1 bit
+        /// Send sequence number N(S) - 3 bits indicating this frame's sequence number
         send_seq_num: u8, // 3 bits
-        byte: u8,         // fully constructed i frame control byte
+        /// Complete control byte constructed from the above fields
+        byte: u8, // fully constructed i frame control byte
     },
+    /// Supervisory frame (S-frame) format used for flow control and error recovery
     SFrame {
+        /// Receive sequence number N(R) - 3 bits indicating the sequence number of the next expected frame
         recv_seq_num: u8, // 3 bits
+        /// Poll/Final bit requesting or responding to immediate response
         poll_final: bool, // 1 bit
-        supervisory: u8,  // 2 bits
-        byte: u8,         // fully constructed s frame control byte
+        /// Supervisory function bits defining frame type (RR, RNR, REJ, SREJ)
+        supervisory: u8, // 2 bits
+        /// Complete control byte constructed from the above fields
+        byte: u8, // fully constructed s frame control byte
     },
+    /// Unnumbered frame (U-frame) format used for link management
     UFrame {
-        frame_mod: u8,    // 5 bits
+        /// Frame modifier bits defining the specific U-frame type
+        frame_mod: u8, // 5 bits
+        /// Poll/Final bit requesting or responding to immediate response
         poll_final: bool, // 1 bit
-        byte: u8,         // fully constructed u frame control byte
+        /// Complete control byte constructed from the above fields
+        byte: u8, // fully constructed u frame control byte
     },
     // IFrame128 { // FIXME: non functional because of fixed bytes length of packet
     //     recv_seq_num: u8, // 7 bits
@@ -106,14 +155,14 @@ pub enum Control {
 }
 
 impl Control {
-    /// A function to create an IFrame AX.25 control field
+    /// # A function to create an IFrame AX.25 control field
     ///
-    /// # Arguments
+    /// ## Arguments
     /// - `recv_seq_num`: The receive sequence number is a 3 bit integer. This number is the `send_seq_num` of the next frame to be received
     /// - `poll`: A `bool` used to determine if the command should be immediately reponded to
     /// - `send_seq_num`: The send sequence number is a 3 bit integer. This number represents the place of the packet in the sending/receiving order of the packets for assembly at reception
     ///
-    /// # Example
+    /// ## Example
     /// Here is an example of a IFrame control field being created for a first packet in a communication that does not need an immediate response and the next packet will have the associated send sequence number of 1.
     /// ```
     /// use comms::pack::Control;
@@ -144,14 +193,14 @@ impl Control {
 
     // TODO: check format of the example (specifically the supervisory function bits (section 4.2.1.2))
 
-    /// A function to create an SFrame AX.25 control field
+    /// # A function to create an SFrame AX.25 control field
     ///
-    /// # Arguments
+    /// ## Arguments
     /// - `recv_seq_num`: The receive sequence number is a 3 bit integer. This number is the `send_seq_num` of the next frame to be received
     /// - `poll_final`: A `bool` used to determine if the command should be immediately reponded to
     /// - `supervisory`: The supervisory bit for the SFrame which has a maximum value of 3
     ///
-    /// # Example
+    /// ## Example
     /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
     /// ```
     /// use comms::pack::Control;
@@ -180,13 +229,13 @@ impl Control {
         };
     }
 
-    /// A function to create a UFrame AX.25 control field
+    /// # A function to create a UFrame AX.25 control field
     ///
-    /// # Arguments
+    /// ## Arguments
     /// - `frame_mod`: A `u8` representing the unnumbered frame modifier bits, this value must be less than 32
     /// - `poll`(IFrame)/`poll_final`(SFrame, UFrame): A `bool` used to determine if the command should be immediately reponded to
     ///
-    /// # Example
+    /// ## Example
     /// Here is an example of a UFrame control field being created for an unnumbered frame that has a frame modifier of 0 and requires an immediate response
     /// ```
     /// use comms::pack::Control;
@@ -281,6 +330,14 @@ impl Control {
     //     };
     // }
 
+    /// # Returns the control byte for the Control enum variant
+    ///
+    /// ## Arguments
+    /// * `self` - The Control enum variant
+    ///
+    /// ## Returns
+    /// * `Some(u8)` - The control byte for the variant
+    /// * `None` - If the control byte cannot be determined (never happens with current variants)
     pub fn to_byte(self: Self) -> Option<u8> {
         match self {
             Self::IFrame { byte, .. } => Some(byte),
@@ -291,9 +348,9 @@ impl Control {
     }
 }
 
-/// A byte-adjacent structure representing the PID field to determine the L3 network protocol being used in the transmission.
+/// # A byte-adjacent structure representing the PID field to determine the L3 network protocol being used in the transmission.
 ///
-/// # Example
+/// ## Example
 /// Here is an example creation of Pid byte.
 /// ```
 /// use comms::pack::Pid;
@@ -303,40 +360,87 @@ impl Control {
 #[derive(Clone, Copy, Debug)]
 #[repr(u8)]
 pub enum Pid {
+    /// ISO 8208/CCITT X.25 PLP protocol
     ISO8208 = 0x01,
+    /// Compressed TCP/IP packet. Van Jacobson (RFC 1144)
     RFC1144C = 0x06,
+    /// Uncompressed TCP/IP packet. Van Jacobson (RFC 1144)
     RFC1144U = 0x07,
+    /// Segmentation fragment
     SegFrag = 0x08,
+    /// TEXNET datagram protocol
     TEXNET = 0xC3,
+    /// Link Quality Protocol
     LinkQuality = 0xC4,
+    /// Appletalk protocol
     AppleTalk = 0xCA,
+    /// Appletalk ARP
     AppleTalkARP = 0xCB,
+    /// ARPA Internet Protocol
     ARPAIP = 0xCC,
+    /// ARPA Address Resolution Protocol
     ARPAAR = 0xCD,
+    /// FlexNet protocol
     FlexNet = 0xCE,
+    /// NET/ROM protocol
     NETROM = 0xCF,
+    /// No Layer 3 protocol
     NoL3 = 0xF0,
+    /// Escape character
     EscChar = 0xFF,
 }
 
+/// # An AX.25 packet payload containing the information field data.
+///
+/// The payload has a fixed size of 171 bytes to maintain compatibility with FX.25 Reed-Solomon encoding.
+/// Any unused bytes are padded with zeros.
 pub struct Payload {
+    /// The raw payload data bytes with a fixed length of 271 bytes.
     pub data: [u8; 171],
 }
 
+/// # A 64-bit correlation tag that identifies the Reed-Solomon encoding parameters for FX.25 frames.
+///
+/// The correlation tag is a unique 64-bit sequence that specifies parameters like the error check value size
+/// and number of information bytes for a given Reed-Solomon encoding scheme.
+///
+/// Each variant represents a specific RS(n,k) encoding where:
+/// - n is the total number of bytes after encoding
+/// - k is the number of information bytes before encoding
+/// - (n-k) is the number of check value bytes added
+///
+/// ## Example
+/// ```
+/// use comms::pack::CorrelationTag;
+///
+/// // Use RS(255,239) encoding with 16-byte check value
+/// let tag = CorrelationTag::Tag01;
+/// ```
 #[derive(Clone, Copy)]
 #[repr(u64)]
 pub enum CorrelationTag {
-    Tag01 = 0xB74DB7DF8A532F3E, // RS(255, 239) 16-byte check value, 239 information bytes
-    Tag02 = 0x26FF60A600CC8FDE, // RS(144,128) - shortened RS(255, 239), 128 info bytes
-    Tag03 = 0xC7DC0508F3D9B09E, // RS(80,64) - shortened RS(255, 239), 64 info bytes
-    Tag04 = 0x8F056EB4369660EE, // RS(48,32) - shortened RS(255, 239), 32 info bytes
-    Tag05 = 0x6E260B1AC5835FAE, // RS(255, 223) 32-byte check value, 223 information bytes
-    Tag06 = 0xFF94DC634F1CFF4E, // RS(160,128) - shortened RS(255, 223), 128 info bytes
-    Tag07 = 0x1EB7B9CDBC09C00E, // RS(96,64) - shortened RS(255, 223), 64 info bytes
-    Tag08 = 0xDBF869BD2DBB1776, // RS(64,32) - shortened RS(255, 223), 32 info bytes
-    Tag09 = 0x3ADB0C13DEAE2836, // RS(255, 191) 64-byte check value, 191 information bytes
-    Tag0A = 0xAB69DB6A543188D6, // RS(192, 128) - shortened RS(255, 191), 128 info bytes
-    Tag0B = 0x4A4ABEC4A724B796, // RS(128, 64) - shortened RS(255, 191), 64 info bytes
+    /// RS(255, 239) 16-byte check value, 239 information bytes
+    Tag01 = 0xB74DB7DF8A532F3E,
+    /// RS(144,128) - shortened RS(255, 239), 128 info bytes
+    Tag02 = 0x26FF60A600CC8FDE,
+    /// RS(80,64) - shortened RS(255, 239), 64 info bytes
+    Tag03 = 0xC7DC0508F3D9B09E,
+    /// RS(48,32) - shortened RS(255, 239), 32 info bytes
+    Tag04 = 0x8F056EB4369660EE,
+    /// RS(255, 223) 32-byte check value, 223 information bytes
+    Tag05 = 0x6E260B1AC5835FAE,
+    /// RS(160,128) - shortened RS(255, 223), 128 info bytes
+    Tag06 = 0xFF94DC634F1CFF4E,
+    /// RS(96,64) - shortened RS(255, 223), 64 info bytes
+    Tag07 = 0x1EB7B9CDBC09C00E,
+    /// RS(64,32) - shortened RS(255, 223), 32 info bytes
+    Tag08 = 0xDBF869BD2DBB1776,
+    /// RS(255, 191) 64-byte check value, 191 information bytes
+    Tag09 = 0x3ADB0C13DEAE2836,
+    /// RS(192, 128) - shortened RS(255, 191), 128 info bytes
+    Tag0A = 0xAB69DB6A543188D6,
+    /// RS(128, 64) - shortened RS(255, 191), 64 info bytes
+    Tag0B = 0x4A4ABEC4A724B796,
 }
 
 impl CorrelationTag {
@@ -393,8 +497,26 @@ fn hamming_distance(bytes1: &[u8], bytes2: &[u8]) -> Option<u64> {
     return Some(count);
 }
 
+/// # Computes the CRC-16 value for a byte sequence using the polynomial 0x8810.
+///
+/// This function calculates a 16-bit Cyclic Redundancy Check (CRC) value for error detection
+/// using the polynomial x^16 + x^12 + x^5 + 1 (0x8810). The CRC is computed by iterating
+/// through the input bytes and updating a running CRC value.
+///
+/// ## Arguments
+/// * `bytes` - A slice containing the sequence of bytes to compute the CRC for
+///
+/// ## Returns
+/// * `u16` - The computed 16-bit CRC value
+///
+/// ## Example
+/// ```
+/// use comms::pack::compute_crc;
+///
+/// let data = [0x01, 0x02, 0x03];
+/// let crc = compute_crc(&data);
+/// ```
 pub fn compute_crc(bytes: &[u8]) -> u16 {
-    // CRC-16/MCRF4XX
     let mut crc: u16 = 0xffff;
 
     for &byte in bytes {
@@ -404,13 +526,42 @@ pub fn compute_crc(bytes: &[u8]) -> u16 {
     crc
 }
 
+/// # A fixed-length byte buffer with position tracking.
+///
+/// This struct provides a fixed-size byte array with a pointer to track the current position.
+/// It is used internally for building AX.25 and FX.25 packet frames by sequentially adding bytes.
+///
+/// ## Arguments
+/// * `bytes` - Fixed-size array to store the bytes
+/// * `pointer` - Current position in the byte array
+///
+/// ## Example
+/// ```
+/// use comms::pack::Bytes;
+///
+/// let mut buffer = Bytes::<8>::new(); // Create 8-byte buffer
+/// buffer.push(0x7E); // Add flag byte
+/// buffer.extend(&[0x01, 0x02, 0x03]); // Add multiple bytes
+/// ```
 #[derive(Clone, Copy)]
 pub struct Bytes<const N: usize> {
+    /// Fixed-size byte array to store the sequence of bytes being built
     pub bytes: [u8; N],
+    /// Current position/index in the byte array where the next byte will be written
     pub pointer: usize,
 }
 
 impl<const N: usize> Bytes<N> {
+    /// # Creates a new empty Bytes buffer with specified size.
+    ///
+    /// Creates a new Bytes instance initialized with zeros and pointer at position 0.
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::Bytes;
+    ///
+    /// let mut buffer = Bytes::<8>::new(); // Create 8-byte buffer
+    /// ```
     pub fn new() -> Bytes<N> {
         return Bytes {
             bytes: [0; N],
@@ -418,6 +569,22 @@ impl<const N: usize> Bytes<N> {
         };
     }
 
+    /// # Appends a single byte to the Bytes buffer.
+    ///
+    /// Adds a byte to the buffer at the current pointer position if there is room.
+    /// The pointer is advanced if the byte is successfully added.
+    /// Returns silently without modifying buffer if at capacity.
+    ///
+    /// ## Arguments
+    /// * `value` - The byte value to append to the buffer
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::Bytes;
+    ///
+    /// let mut buffer = Bytes::<8>::new();
+    /// buffer.push(0x7E); // Add flag byte
+    /// ```
     pub fn push(&mut self, value: u8) {
         if self.pointer >= self.bytes.len() {
             return;
@@ -428,6 +595,22 @@ impl<const N: usize> Bytes<N> {
         self.pointer += 1;
     }
 
+    /// # Extends the Bytes buffer by appending multiple bytes.
+    ///
+    /// Adds a sequence of bytes from a slice to the buffer at the current pointer position.
+    /// The pointer is advanced for each byte added. Returns silently without modification if
+    /// adding all bytes would exceed capacity.
+    ///
+    /// ## Arguments
+    /// * `values` - Slice containing the bytes to append to the buffer
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::Bytes;
+    ///
+    /// let mut buffer = Bytes::<8>::new();
+    /// buffer.extend(&[0x01, 0x02, 0x03]); // Add multiple bytes
+    /// ```
     pub fn extend(&mut self, values: &[u8]) {
         if values.len() + self.pointer >= self.bytes.len() {
             return;
@@ -440,16 +623,72 @@ impl<const N: usize> Bytes<N> {
     }
 }
 
+/// # A structure representing an AX.25/FX.25 packet with addressing, control, and payload data.
+///
+/// The Packet structure contains all the components needed to construct or parse a complete
+/// AX.25 or FX.25 frame, including:
+///
+/// ## Example
+/// ```
+/// use comms::pack::{Packet, Pid};
+///
+/// let packet = Packet::pack_to_ax25(
+///     *b"NOCALL",  // Destination callsign
+///     *b"MYCALL",  // Source callsign
+///     0,           // Receive sequence number
+///     false,       // Poll bit
+///     0,           // Send sequence number
+///     Pid::NoL3,   // Protocol ID
+///     [0; 171]     // Payload data
+/// );
+/// ```
 pub struct Packet {
+    /// Destination station address containing callsign and SSID
     pub dest_addr: Address,
+    /// Source station address containing callsign and SSID
     pub source_addr: Address,
+    /// Control field indicating frame type and sequence numbers
     pub control: Control,
+    /// Protocol identifier for the Layer 3 protocol
     pub pid: Pid,
+    /// Information field data
     pub payload: Payload,
+    /// Complete raw packet bytes including flags and FCS
     pub bytes: [u8; 191],
 }
 
 impl Packet {
+    /// # Encodes a packet as an AX.25 frame.
+    ///
+    /// This function takes the individual components of an AX.25 packet and assembles them into a complete frame
+    /// including address fields, control field, protocol ID, payload data and CRC.
+    ///
+    /// ## Arguments
+    /// * `dest_callsign` - 6-byte array containing the destination callsign
+    /// * `source_callsign` - 6-byte array containing the source callsign
+    /// * `recv_seq_num` - Receive sequence number (0-7)
+    /// * `poll` - Poll bit indicating if immediate response is required
+    /// * `send_seq_num` - Send sequence number (0-7)
+    /// * `pid` - Protocol identifier indicating Layer 3 protocol
+    /// * `data` - 171-byte array containing the payload data
+    ///
+    /// ## Returns
+    /// A new Packet struct containing the assembled frame
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::{Packet, Pid};
+    ///
+    /// let packet = Packet::pack_to_ax25(
+    ///     *b"NOCALL",  // Destination callsign
+    ///     *b"MYCALL",  // Source callsign
+    ///     0,           // Receive sequence number
+    ///     false,       // Poll bit
+    ///     0,           // Send sequence number
+    ///     Pid::NoL3,   // Protocol ID
+    ///     [0; 171]     // Payload data
+    /// );
+    /// ```
     pub fn pack_to_ax25(
         dest_callsign: [u8; 6],
         source_callsign: [u8; 6],
@@ -497,6 +736,35 @@ impl Packet {
         return packet;
     }
 
+    /// # Encodes an existing AX.25 packet as an FX.25 frame with error correction.
+    ///
+    /// This function takes an AX.25 packet and wraps it with FX.25 framing, including:
+    /// - Opening flags
+    /// - Correlation tag indicating Reed-Solomon encoding parameters
+    /// - Reed-Solomon error correction coding
+    /// - Closing flags
+    ///
+    /// The FX.25 frame uses a 64-byte check value size with Reed-Solomon RS(255,191) encoding.
+    ///
+    /// ## Returns
+    /// * `[u8; 271]` - The complete encoded FX.25 frame as a fixed-size byte array
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::{Packet, Pid};
+    ///
+    /// let ax25_packet = Packet::pack_to_ax25(
+    ///     *b"NOCALL",  // Destination callsign
+    ///     *b"MYCALL",  // Source callsign
+    ///     0,           // Receive sequence number
+    ///     false,       // Poll bit
+    ///     0,           // Send sequence number
+    ///     Pid::NoL3,   // Protocol ID
+    ///     [0; 171]     // Payload data
+    /// );
+    ///
+    /// let fx25_frame = ax25_packet.pack_to_fx25();
+    /// ```
     pub fn pack_to_fx25(self: Self) -> [u8; 271] {
         let mut bytes: Bytes<271> = Bytes::<271>::new();
 
@@ -521,6 +789,35 @@ impl Packet {
         return bytes.bytes;
     }
 
+    /// # Decodes an FX.25 frame and extracts the contained AX.25 packet.
+    ///
+    /// This function takes a complete FX.25 frame and:
+    /// - Validates the correlation tag matches RS(255,191) parameters
+    /// - Performs Reed-Solomon error correction decoding
+    /// - Extracts and validates packet fields (addresses, control, PID, payload)
+    /// - Verifies CRC matches payload
+    ///
+    /// ## Arguments
+    /// * `bytes` - Complete 271-byte FX.25 frame to decode
+    ///
+    /// ## Returns
+    /// * `Ok(Packet)` - Successfully decoded AX.25 packet
+    /// * `Err(())` - Frame could not be decoded due to invalid format or uncorrectable errors
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::Packet;
+    ///
+    /// let fx25_frame = [0u8; 271]; // Received FX.25 frame
+    /// match Packet::decode_fx25(fx25_frame) {
+    ///     Ok(packet) => {
+    ///         // Process decoded AX.25 packet
+    ///     },
+    ///     Err(_) => {
+    ///         // Handle decoding error
+    ///     }
+    /// }
+    /// ```
     pub fn decode_fx25(bytes: [u8; 271]) -> Result<Packet, ()> {
         let ecc_len = 64;
         let decoder = Decoder::new(ecc_len);
@@ -604,18 +901,72 @@ impl Packet {
     }
 }
 
+/// # A structure containing the core fields of an FX.25 frame after decoding.
+///
+/// This structure holds the individual components extracted from a decoded FX.25 frame,
+/// including addressing information, sequence numbers, and payload data. It represents
+/// the intermediate step between raw FX.25 bytes and a fully constructed AX.25 packet.
+///
+/// ## Example
+/// ```
+/// use comms::pack::Fx25Fields;
+///
+/// let frame_bytes = [0u8; 271]; // Received FX.25 frame
+///
+/// if let Some(fields) = Fx25Fields::parse(&frame_bytes) {
+///     let source = fields.source_callsign;
+///     let dest = fields.dest_callsign;
+///     let data = fields.data;
+/// }
+/// ```
 pub struct Fx25Fields {
-    source_callsign: [u8; 7], // Source callsign including SSID
-    dest_callsign: [u8; 7],   // Destination callsign including SSID
-    recv_seq_num: u8,         // Receive sequence number (N(R))
-    poll: bool,               // Poll bit
-    send_seq_num: u8,         // Send sequence number (N(S))
-    pid: Pid,                 // Protocol ID
-    data: [u8; 171],          // Information field
-    crc: [u8; 2],             // CRC bytes
+    /// 7-byte array containing the source station's callsign and SSID
+    pub source_callsign: [u8; 7],
+    /// 7-byte array containing the destination station's callsign and SSID
+    pub dest_callsign: [u8; 7],
+    /// Receive sequence number N(R) from control field
+    pub recv_seq_num: u8,
+    /// Poll/Final bit from the control field
+    pub poll: bool,
+    /// Send sequence number N(S) from control field
+    pub send_seq_num: u8,
+    /// Protocol identifier indicating Layer 3 protocol
+    pub pid: Pid,
+    /// 171-byte array containing information field payload
+    pub data: [u8; 171],
+    /// 2-byte array containing frame check sequence
+    pub crc: [u8; 2],
 }
 
 impl Fx25Fields {
+    /// # Parses raw packet bytes into FX.25 frame fields.
+    ///
+    /// Takes a byte slice of an FX.25 frame and extracts the individual components:
+    /// - Address fields (source and destination callsigns/SSIDs)
+    /// - Control field bits (sequence numbers, poll bit)
+    /// - Protocol ID
+    /// - Payload data
+    /// - CRC check value
+    ///
+    /// ## Arguments
+    /// * `packet` - Byte slice containing complete FX.25 frame data
+    ///
+    /// ## Returns
+    /// * `Some(Fx25Fields)` - Successfully parsed frame fields
+    /// * `None` - Frame could not be parsed due to invalid length or format
+    ///
+    /// ## Example
+    /// ```
+    /// use comms::pack::Fx25Fields;
+    ///
+    /// let frame_bytes = [0u8; 271]; // Received FX.25 frame
+    ///
+    /// if let Some(fields) = Fx25Fields::parse(&frame_bytes) {
+    ///     let dest = fields.dest_callsign;
+    ///     let source = fields.source_callsign;
+    ///     let data = fields.data;
+    /// }
+    /// ```
     pub fn parse(packet: &[u8]) -> Option<Self> {
         if packet.len() < 15 {
             return None;

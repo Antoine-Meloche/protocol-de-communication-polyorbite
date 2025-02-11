@@ -1,0 +1,44 @@
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_COMMIT_REF_NAME !~ /^(main)|(dev)$/
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_NAME =~ /^(main)|(dev)$/
+    - if: $CI_PIPELINE_SOURCE == "web"
+
+stages:
+  - test
+  - test-fuzzing
+  - build
+  - coverage
+
+image: rust:latest
+
+test:
+  stage: test
+  script:
+    - cargo test
+
+test-fuzzing:
+  stage: test-fuzzing
+  script:
+    - cargo test --features fuzz
+
+build:
+  stage: build
+  script:
+    - cargo build --release --no-default-features --features cubesat
+    - mv target/release/libcomms.rlib cubesat-comms.rlib
+    - cargo build --release --features ground-station
+    - mv target/release/libcomms.rlib ground-station-comms.rlib
+  artifacts:
+    paths:
+      - "cubesat-comms.rlib"
+      - "ground-station-comms.rlib"
+
+coverage:
+  stage: coverage
+  script:
+    - ./coverage.sh
+  artifacts:
+    paths:
+      - "coverage"
+      - "doc_coverage.txt"

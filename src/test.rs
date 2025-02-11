@@ -634,19 +634,18 @@ mod fuzzing {
 
             let signed = sign_data(&data, &key);
 
-            assert_eq!(signed.len(), data_len as usize + 50);
-            assert_eq!(&signed[..data_len as usize], &data);
-            assert!(verify_data(&signed, &key));
+            assert_eq!(signed.len(), 50);
+            assert!(verify_data(&data, signed, &key));
 
             let mut tampered = signed.clone();
             let tamper_pos = rng.gen_range(0..tampered.len());
             tampered[tamper_pos] ^= 0xFF;
 
-            assert!(!verify_data(&tampered, &key));
+            assert!(!verify_data(&data, tampered, &key));
 
             let mut wrong_key = key.clone();
             wrong_key[rng.gen_range(0..16)] ^= 0xFF;
-            assert!(!verify_data(&signed, &wrong_key));
+            assert!(!verify_data(&data, signed, &wrong_key));
         }
     }
 
@@ -662,7 +661,10 @@ mod fuzzing {
             let mut key = [0u8; 16];
             rng.fill_bytes(&mut key);
 
-            assert!(!verify_data(&data, &key));
+            let mut signed = [0u8; 50];
+            rng.fill_bytes(&mut signed);
+
+            assert!(!verify_data(&data, signed, &key));
         }
     }
 }

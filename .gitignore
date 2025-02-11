@@ -72,3 +72,7 @@ docs/_build/
 .python-version
 
 Cargo.lock
+.gitlab-ci-local/
+*.profraw
+coverage/
+doc_coverage.txt
