@@ -12,7 +12,6 @@ __pycache__/
 .Python
 .venv/
 env/
-bin/
 build/
 develop-eggs/
 dist/
@@ -76,3 +75,4 @@ Cargo.lock
 *.profraw
 coverage/
 doc_coverage.txt
+public/

@@ -12,6 +12,7 @@ export RUSTFLAGS="-Cinstrument-coverage"
 export LLVM_PROFILE_FILE="coverage-%p-%m.profraw"
 
 cargo build &> /dev/null
+cargo test &> /dev/null
 
 if ! command -v grcov &> /dev/null; then
     echo "=== Installing llvm-tools ==="
@@ -20,26 +21,20 @@ if ! command -v grcov &> /dev/null; then
     cargo install grcov &> /dev/null
 fi
 
-grcov . \
-    --binary-path ./target/debug/ \
-    -s . \
-    -t html \
-    --branch \
-    --ignore-not-existing \
-    --ignore "/*" \
-    --ignore "tests/*" \
-    -o coverage/
+cargo +nightly tarpaulin --all-features --workspace --timeout 120 --out html &> /dev/null
 
-    if [[ "$1" == "--open" ]]; then
-        if [[ "$OSTYPE" == "darwin"* ]]; then
-            open coverage/index.html
-        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-            xdg-open coverage/index.html
-        elif [[ "$OSTYPE" == "msys" ]]; then
-            start coverage/index.html
-        fi
+if [[ "$1" == "--open" ]]; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        open tarpaulin-report.html
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        xdg-open tarpaulin-report.html
+    elif [[ "$OSTYPE" == "msys" ]]; then
+        start tarpaulin-report.html
     fi
+fi
 
+mkdir public
+mv tarpaulin-report.html public/index.html
 
 echo "=== Running Documentation Coverage ==="
 DOC_OUTPUT=$(cargo doc --all-features --no-deps --document-private-items 2>&1)

@@ -38,7 +38,9 @@ coverage:
   stage: coverage
   script:
     - ./coverage.sh
+  pages:
+    expire_in: 1 week
   artifacts:
     paths:
-      - "coverage"
+      - public
       - "doc_coverage.txt"
