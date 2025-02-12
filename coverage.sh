@@ -18,7 +18,7 @@ if ! command -v grcov &> /dev/null; then
     echo "=== Installing llvm-tools ==="
     rustup component add llvm-tools-preview
     echo "=== Installing grcov... ==="
-    cargo install grcov &> /dev/null
+    cargo install cargo-tarpaulin &> /dev/null
 fi
 
 cargo +nightly tarpaulin --all-features --workspace --timeout 120 --out html &> /dev/null
