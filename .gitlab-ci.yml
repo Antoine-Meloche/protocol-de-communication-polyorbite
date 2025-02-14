@@ -36,8 +36,14 @@ build:
 
 coverage:
   stage: coverage
+  before_script:
+    - apt-get update && apt-get install -y libssl-dev pkg-config
+    - rustup component add llvm-tools-preview
+    - cargo install cargo-tarpaulin
   script:
     - ./coverage.sh
+  variables:
+    FF_NETWORK_PER_BUILD: "true"
   pages:
     expire_in: 1 week
   artifacts:

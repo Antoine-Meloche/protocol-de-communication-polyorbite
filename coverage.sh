@@ -14,14 +14,17 @@ export LLVM_PROFILE_FILE="coverage-%p-%m.profraw"
 cargo build &> /dev/null
 cargo test &> /dev/null
 
-if ! command -v grcov &> /dev/null; then
-    echo "=== Installing llvm-tools ==="
-    rustup component add llvm-tools-preview
-    echo "=== Installing grcov... ==="
-    cargo install cargo-tarpaulin &> /dev/null
-fi
+echo "=== Installing rust nightly"
+rustup toolchain add nightly-x86_64-unknown-linux-gnu &> /dev/null
 
-cargo +nightly tarpaulin --all-features --workspace --timeout 120 --out html &> /dev/null
+echo "=== Installing llvm-tools ==="
+rustup component add llvm-tools-preview &> /dev/null
+
+echo "=== Installing tarpaulin... ==="
+cargo install cargo-tarpaulin &> /dev/null
+
+echo "=== Running coverage ==="
+cargo +nightly tarpaulin --all-features --workspace --timeout 120 --out html --skip-clean
 
 if [[ "$1" == "--open" ]]; then
     if [[ "$OSTYPE" == "darwin"* ]]; then
