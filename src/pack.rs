@@ -73,13 +73,8 @@ impl Address {
     ///
     /// let addr = Address::new(*b"NOCALL", 0, true, false);
     /// ```
-    pub fn new(mut callsign: [u8; 6], ssid: u8, command: bool, last_addr: bool) -> Self {
-        if ssid > 15 {
-            // panic!(
-            //     "The destination SSID is larger than the allowed amount (15): {} > 15",
-            //     ssid
-            // ); // FIXME: remove panic!
-        }
+    pub fn new(mut callsign: [u8; 6], mut ssid: u8, command: bool, last_addr: bool) -> Self {
+        ssid %= 16; // Make sure the SSID is within the valid range of 0-15
 
         for i in 0..callsign.len() {
             callsign[i] <<= 1;
@@ -98,6 +93,15 @@ impl Address {
             bytes: bytes.bytes,
         };
     }
+}
+
+#[repr(u8)]
+#[derive(Clone, Copy)]
+pub enum Supervisory {
+    RR = 0b00,
+    RNR = 0b01,
+    REJ = 0b10,
+    SREJ = 0b11,
 }
 
 /// # A representatoin of the `control` byte/bytes in an AX.25 packet
@@ -131,15 +135,15 @@ pub enum Control {
         /// Complete control byte constructed from the above fields
         byte: u8, // fully constructed s frame control byte
     },
-    /// Unnumbered frame (U-frame) format used for link management
-    UFrame {
-        /// Frame modifier bits defining the specific U-frame type
-        frame_mod: u8, // 5 bits
-        /// Poll/Final bit requesting or responding to immediate response
-        poll_final: bool, // 1 bit
-        /// Complete control byte constructed from the above fields
-        byte: u8, // fully constructed u frame control byte
-    },
+    // /// Unnumbered frame (U-frame) format used for link management
+    // UFrame {
+    //     /// Frame modifier bits defining the specific U-frame type
+    //     frame_mod: u8, // 5 bits
+    //     /// Poll/Final bit requesting or responding to immediate response
+    //     poll_final: bool, // 1 bit
+    //     /// Complete control byte constructed from the above fields
+    //     byte: u8, // fully constructed u frame control byte
+    // },
     // IFrame128 { // FIXME: non functional because of fixed bytes length of packet
     //     recv_seq_num: u8, // 7 bits
     //     poll: bool,       // 1 bit
@@ -170,14 +174,7 @@ impl Control {
     /// let control = Control::new_iframe(1, false, 0);
     /// ```
     pub fn new_iframe(recv_seq_num: u8, poll: bool, send_seq_num: u8) -> Self {
-        assert!(
-            recv_seq_num < 8,
-            "The receive sequence number must not be more than 7"
-        );
-        assert!(
-            send_seq_num < 8,
-            "The send sequence number must not be more than 7"
-        );
+        assert!(recv_seq_num < 8); // The receive sequence number must not be more than 7
 
         let poll_bit: u8 = poll as u8;
 
@@ -207,57 +204,51 @@ impl Control {
     ///
     /// let control = Control::new_sframe(1, true, 0);
     /// ```
-    pub fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: u8) -> Self {
-        assert!(
-            recv_seq_num < 8,
-            "The receive sequence number must not be more than 7"
-        );
-        assert!(
-            supervisory < 4,
-            "The send supervisory number must not be more than 3"
-        );
+    pub fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: Supervisory) -> Self {
+        assert!(recv_seq_num < 8); // The receive sequence number must not be more than 7
 
         let poll_final_bit: u8 = poll_final as u8;
 
-        let byte: u8 = (recv_seq_num << 5) | (poll_final_bit << 4) | (supervisory << 2) | 0b01;
+        let byte: u8 =
+            (recv_seq_num << 5) | (poll_final_bit << 4) | ((supervisory as u8) << 2) | 0b01;
 
         return Control::SFrame {
             recv_seq_num,
             poll_final,
-            supervisory,
+            supervisory: supervisory as u8,
             byte,
         };
     }
 
-    /// # A function to create a UFrame AX.25 control field
-    ///
-    /// ## Arguments
-    /// - `frame_mod`: A `u8` representing the unnumbered frame modifier bits, this value must be less than 32
-    /// - `poll`(IFrame)/`poll_final`(SFrame, UFrame): A `bool` used to determine if the command should be immediately reponded to
-    ///
-    /// ## Example
-    /// Here is an example of a UFrame control field being created for an unnumbered frame that has a frame modifier of 0 and requires an immediate response
-    /// ```
-    /// use comms::pack::Control;
-    ///
-    /// let control = Control::new_uframe(0, true);
-    /// ```
-    pub fn new_uframe(frame_mod: u8, poll_final: bool) -> Self {
-        assert!(frame_mod < 31, "The frame mod must not be more than 31");
+    // /// # A function to create a UFrame AX.25 control field
+    // ///
+    // /// ## Arguments
+    // /// - `frame_mod`: A `u8` representing the unnumbered frame modifier bits, this value must be less than 32
+    // /// - `poll`(IFrame)/`poll_final`(SFrame, UFrame): A `bool` used to determine if the command should be immediately reponded to
+    // ///
+    // /// ## Example
+    // /// Here is an example of a UFrame control field being created for an unnumbered frame that has a frame modifier of 0 and requires an immediate response
+    // /// ```
+    // /// use comms::pack::Control;
+    // ///
+    // /// let control = Control::new_uframe(0, true);
+    // /// ```
+    // pub fn new_uframe(frame_mod: u8, poll_final: bool) -> Self {
+    //     assert!(frame_mod < 31, "The frame mod must not be more than 31");
 
-        let poll_final_bit: u8 = poll_final as u8;
+    //     let poll_final_bit: u8 = poll_final as u8;
 
-        let frame_mod_p1: u8 = frame_mod >> 2 << 2; // 3 bits
-        let frame_mod_p2: u8 = frame_mod << 6 >> 6; // 2 bits
+    //     let frame_mod_p1: u8 = frame_mod >> 2 << 2; // 3 bits
+    //     let frame_mod_p2: u8 = frame_mod << 6 >> 6; // 2 bits
 
-        let byte: u8 = (frame_mod_p1 << 5) | (poll_final_bit << 4) | (frame_mod_p2 << 2) | 0b11;
+    //     let byte: u8 = (frame_mod_p1 << 5) | (poll_final_bit << 4) | (frame_mod_p2 << 2) | 0b11;
 
-        return Control::UFrame {
-            frame_mod,
-            poll_final,
-            byte,
-        };
-    }
+    //     return Control::UFrame {
+    //         frame_mod,
+    //         poll_final,
+    //         byte,
+    //     };
+    // }
 
     // /// A function to create a modulo 128 IFrame AX.25 control field
     // ///
@@ -341,9 +332,8 @@ impl Control {
     pub fn to_byte(self: Self) -> Option<u8> {
         match self {
             Self::IFrame { byte, .. } => Some(byte),
-            Self::UFrame { byte, .. } => Some(byte),
             Self::SFrame { byte, .. } => Some(byte),
-            // _ => None,
+            // Self::UFrame { byte, .. } => Some(byte),
         }
     }
 }
@@ -416,7 +406,7 @@ pub struct Payload {
 /// // Use RS(255,239) encoding with 16-byte check value
 /// let tag = CorrelationTag::Tag01;
 /// ```
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(u64)]
 pub enum CorrelationTag {
     /// RS(255, 239) 16-byte check value, 239 information bytes
@@ -448,8 +438,18 @@ impl CorrelationTag {
         return (*self as u64).to_ne_bytes();
     }
 
-    fn find_closest_tag(received_bytes: &[u8]) -> Option<CorrelationTag> {
-        let mut closest_tag = None;
+    /// # A function to find bitwise the closest correlation tag
+    ///
+    /// This function using a hamming distance algorithm to determine the tag which is the closest to the valid tags.
+    ///
+    /// ## Exemple
+    /// ```
+    /// use comms::pack::CorrelationTag;
+    /// let received_tag = &(0x4A4ABEC4A724B797u64).to_be_bytes();
+    /// let tag = CorrelationTag::find_closest_tag(received_tag);
+    /// ```
+    pub fn find_closest_tag(received_bytes: &[u8]) -> CorrelationTag {
+        let mut closest_tag = CorrelationTag::Tag09;
         let mut min_distance = u64::MAX;
 
         for tag in [
@@ -469,7 +469,7 @@ impl CorrelationTag {
                 Some(distance) => {
                     if distance < min_distance {
                         min_distance = distance;
-                        closest_tag = Some(tag);
+                        closest_tag = tag;
                     }
                 }
                 None => break,
@@ -713,11 +713,7 @@ impl Packet {
         bytes.extend(&dest_addr.bytes);
         bytes.extend(&source_addr.bytes);
 
-        match control {
-            Control::IFrame { byte, .. } => bytes.push(byte),
-            Control::SFrame { byte, .. } => bytes.push(byte),
-            Control::UFrame { byte, .. } => bytes.push(byte),
-        };
+        bytes.push(control.to_byte().unwrap());
 
         bytes.push(pid as u8);
         bytes.extend(&payload.data);
@@ -823,11 +819,7 @@ impl Packet {
         let decoder = Decoder::new(ecc_len);
 
         let correlation_tag = CorrelationTag::find_closest_tag(&bytes[4..12]);
-        if correlation_tag.is_none() {
-            return Err(());
-        }
-
-        if correlation_tag.unwrap() as u64 != CorrelationTag::Tag09 as u64 {
+        if correlation_tag as u64 != CorrelationTag::Tag09 as u64 {
             return Err(());
         }
 
@@ -838,66 +830,63 @@ impl Packet {
             return Err(());
         }
 
-        if let Some(fields) = Fx25Fields::parse(decoded.unwrap().data()) {
-            let dest_callsign = fields.dest_callsign;
-            let source_callsign = fields.source_callsign;
-            let recv_seq_num = fields.recv_seq_num;
-            let poll = fields.poll;
-            let send_seq_num = fields.send_seq_num;
-            let pid = fields.pid;
-            let data = fields.data;
-            let decoded_crc = fields.crc;
+        let fields = Fx25Fields::parse(decoded.unwrap().data());
+        let dest_callsign = fields.dest_callsign;
+        let source_callsign = fields.source_callsign;
+        let recv_seq_num = fields.recv_seq_num;
+        let poll = fields.poll;
+        let send_seq_num = fields.send_seq_num;
+        let pid = fields.pid;
+        let data = fields.data;
+        let decoded_crc = fields.crc;
 
-            let mut dest_callsign_bytes: [u8; 6] = [0; 6];
-            dest_callsign_bytes.copy_from_slice(&dest_callsign[0..6]);
-            for i in 0..6 {
-                dest_callsign_bytes[i] >>= 1;
-            }
-
-            let dest_addr = Address {
-                callsign: dest_callsign_bytes,
-                ssid: dest_callsign[6],
-                bytes: dest_callsign,
-            };
-
-            let mut source_callsign_bytes: [u8; 6] = [0; 6];
-            source_callsign_bytes.copy_from_slice(&source_callsign[0..6]);
-            for i in 0..6 {
-                source_callsign_bytes[i] >>= 1;
-            }
-
-            let source_addr = Address {
-                callsign: source_callsign_bytes,
-                ssid: source_callsign[6],
-                bytes: source_callsign,
-            };
-
-            let payload = Payload { data };
-
-            // Check data with CRC
-            let crc = compute_crc(&data);
-            if crc.to_be_bytes() != decoded_crc {
-                return Err(());
-            }
-
-            let mut bytes: [u8; 191] = [0; 191];
-            bytes.copy_from_slice(decoded.unwrap().data());
-
-            let control = Control::new_iframe(recv_seq_num, poll, send_seq_num);
-
-            let packet = Packet {
-                dest_addr,
-                source_addr,
-                control,
-                pid,
-                payload,
-                bytes,
-            };
-
-            return Ok(packet);
+        let mut dest_callsign_bytes: [u8; 6] = [0; 6];
+        dest_callsign_bytes.copy_from_slice(&dest_callsign[0..6]);
+        for i in 0..6 {
+            dest_callsign_bytes[i] >>= 1;
         }
 
-        return Err(());
+        let dest_addr = Address {
+            callsign: dest_callsign_bytes,
+            ssid: dest_callsign[6],
+            bytes: dest_callsign,
+        };
+
+        let mut source_callsign_bytes: [u8; 6] = [0; 6];
+        source_callsign_bytes.copy_from_slice(&source_callsign[0..6]);
+        for i in 0..6 {
+            source_callsign_bytes[i] >>= 1;
+        }
+
+        let source_addr = Address {
+            callsign: source_callsign_bytes,
+            ssid: source_callsign[6],
+            bytes: source_callsign,
+        };
+
+        let payload = Payload { data };
+
+        // Check data with CRC
+        let crc = compute_crc(&data);
+        if crc.to_be_bytes() != decoded_crc {
+            return Err(());
+        }
+
+        let mut bytes: [u8; 191] = [0; 191];
+        bytes.copy_from_slice(decoded.unwrap().data());
+
+        let control = Control::new_iframe(recv_seq_num, poll, send_seq_num);
+
+        let packet = Packet {
+            dest_addr,
+            source_addr,
+            control,
+            pid,
+            payload,
+            bytes,
+        };
+
+        return Ok(packet);
     }
 }
 
@@ -967,9 +956,9 @@ impl Fx25Fields {
     ///     let data = fields.data;
     /// }
     /// ```
-    pub fn parse(packet: &[u8]) -> Option<Self> {
+    pub fn parse(mut packet: &[u8]) -> Self {
         if packet.len() < 15 {
-            return None;
+            packet = &[0u8; 271];
         }
 
         let mut dest = [0u8; 7];
@@ -1008,7 +997,7 @@ impl Fx25Fields {
         let mut crc: [u8; 2] = [0; 2];
         crc.copy_from_slice(&packet[188..190]);
 
-        Some(Fx25Fields {
+        return Fx25Fields {
             dest_callsign: dest,
             source_callsign: source,
             recv_seq_num,
@@ -1017,6 +1006,6 @@ impl Fx25Fields {
             pid,
             data,
             crc,
-        })
+        };
     }
 }

@@ -29,7 +29,7 @@ fn main() {
     let mut data = [0u8; 171];
     data[..data_str.len()].copy_from_slice(&data_str);
 
-    let fx25_bytes: [u8; 271] = load_to_transmit(*b"HFU4D ", *b"IUJDH8", data);
+    let fx25_bytes: [u8; 271] = load_to_transmit(*b"HFU4D ", &data);
 
     println!("{:?}", fx25_bytes);
 

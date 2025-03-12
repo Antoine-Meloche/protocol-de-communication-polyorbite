@@ -120,10 +120,6 @@ pub fn sign_data(data: &[u8], key_raw: &[u8; 16]) -> [u8; 50] {
 /// assert!(is_valid);
 /// ```
 pub fn verify_data(signed_data: &[u8], signature: [u8; 50], key_raw: &[u8; 16]) -> bool {
-    if signature.len() != 50 {
-        return false;
-    }
-
     let encrypted_hash = &signature[0..34];
     let nonce = &signature[34..];
 

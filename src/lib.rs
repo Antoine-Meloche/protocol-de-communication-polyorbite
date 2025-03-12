@@ -135,6 +135,8 @@ mod test;
 pub mod cubesat {
     use crate::pack::{Packet, Pid};
 
+    const SOURCE_CALLSIGN: [u8; 6] = [12, 12, 12, 43, 43, 56];
+
     /// # Package data into FX.25 frame for radio transmission.
     /// Takes destination and source callsigns along with payload data and creates an
     /// FX.25 frame that can be loaded into the radio buffer for transmission.
@@ -154,15 +156,35 @@ pub mod cubesat {
     /// let data = [0u8; 171];
     /// let tx_frame = load_to_transmit(dest, source, data);
     /// ```
-    pub fn load_to_transmit(
-        dest_callsign: [u8; 6],
-        source_callsign: [u8; 6],
-        data: [u8; 171],
-    ) -> [u8; 271] {
-        let ax25_packet: Packet =
-            Packet::pack_to_ax25(dest_callsign, source_callsign, 1, true, 2, Pid::NoL3, data);
-        let fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
+    pub fn load_to_transmit(dest_callsign: [u8; 6], data: &[u8]) -> [u8; 271] {
+        let packet_count: usize = (data.len() + 170) / 171;
 
-        return fx25_bytes;
+        for i in 0..packet_count {
+            let recv_seq_num = (i % 8) as u8;
+            let send_seq_num = ((i + 1) % 8) as u8;
+
+            let mut packet_data = [0u8; 171];
+            let start = i * 171;
+            let end = core::cmp::min(start + 171, data.len());
+
+            if start < data.len() {
+                packet_data[..(end - start)].copy_from_slice(&data[start..end]);
+            }
+
+            let ax25_packet: Packet = Packet::pack_to_ax25(
+                dest_callsign,
+                SOURCE_CALLSIGN,
+                recv_seq_num,
+                i == packet_count,
+                send_seq_num,
+                Pid::NoL3,
+                packet_data,
+            );
+            let _fx25_bytes: [u8; 271] = ax25_packet.pack_to_fx25();
+
+            // FIXME: Add sending logic
+        }
+
+        return [0u8; 271];
     }
 }

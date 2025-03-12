@@ -32,4 +32,4 @@ rand = { version = "0.8.5", optional = true }
 crc-0x8810 = "0.1.0"
 reed-solomon = "0.2"
 ascon-aead = "0.4.2"
-md5 = "0.7.0"
+md5 = { version = "0.7.0", default-features = false }

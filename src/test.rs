@@ -7,6 +7,8 @@ use reed_solomon::{Decoder, Encoder};
 use pack::{compute_crc, Bytes, Packet, Pid};
 use sign::{sign_data, verify_data};
 
+use crate::pack::{Control, CorrelationTag, Fx25Fields, Supervisory};
+
 use super::*;
 
 #[test]
@@ -121,6 +123,18 @@ fn test_add_gf() {
 }
 
 #[test]
+fn test_sub_gf() {
+    assert_eq!(
+        (gf::GF256(0x53) - gf::GF256(0xca)).0,
+        (gf256::gf256(0x53) - gf256::gf256(0xca)).0
+    );
+    assert_eq!(
+        (gf::GF256(0xff) - gf::GF256(0xff)).0,
+        (gf256::gf256(0xff) - gf256::gf256(0xff)).0
+    );
+}
+
+#[test]
 fn test_multiply_gf() {
     assert_eq!(
         (gf::GF256(0x53) * gf::GF256(0xca)).0,
@@ -150,10 +164,18 @@ fn test_divide_gf() {
         (gf::GF256(0xff) / gf::GF256(0xff)).0,
         (gf256::gf256(0xff) / gf256::gf256(0xff)).0
     );
+    assert_eq!((gf::GF256(0x53) / gf::GF256(0)).0, 0);
+}
+
+#[test]
+fn test_inverse_gf() {
+    assert_eq!(gf::GF256::inverse(0), 0);
 }
 
 #[test]
 fn test_properties_gf() {
+    assert_eq!(gf::GF256(0), gf::GF256::new(0));
+
     // Addition properties
     assert_eq!(
         gf::GF256(0x43) + gf::GF256(0xf1),
@@ -298,6 +320,194 @@ fn test_sign_tampered_nonce() {
     signed[data.len() + 16] ^= 0xFF;
 
     assert!(!verify_data(data, signed, key));
+}
+
+#[test]
+fn test_correlation_tag() {
+    let correlation_tag =
+        CorrelationTag::find_closest_tag(&(CorrelationTag::Tag0B as u64 + 1).to_le_bytes());
+    assert_eq!(correlation_tag as u8, CorrelationTag::Tag0B as u8);
+
+    let correlation_tag_incorrect_length = CorrelationTag::find_closest_tag(&[0]);
+    assert_eq!(
+        correlation_tag_incorrect_length as u8,
+        CorrelationTag::Tag09 as u8
+    );
+}
+
+#[test]
+fn test_bytes() {
+    let buffer = Bytes::<8>::new();
+    assert_eq!(buffer.bytes, [0; 8]);
+    assert_eq!(buffer.pointer, 0);
+
+    let mut buffer = Bytes::<4>::new();
+    buffer.push(0x7E);
+    assert_eq!(buffer.bytes[0], 0x7E);
+    assert_eq!(buffer.pointer, 1);
+
+    buffer.push(0x01);
+    buffer.push(0x02);
+    buffer.push(0x03);
+    assert_eq!(buffer.bytes, [0x7E, 0x01, 0x02, 0x03]);
+    assert_eq!(buffer.pointer, 4);
+
+    buffer.push(0x04);
+    assert_eq!(buffer.bytes, [0x7E, 0x01, 0x02, 0x03]);
+    assert_eq!(buffer.pointer, 4);
+
+    let mut buffer = Bytes::<8>::new();
+    buffer.extend(&[0x01, 0x02, 0x03]);
+    assert_eq!(buffer.bytes[0..3], [0x01, 0x02, 0x03]);
+    assert_eq!(buffer.pointer, 3);
+
+    buffer.extend(&[0x04, 0x05]);
+    assert_eq!(buffer.bytes[0..5], [0x01, 0x02, 0x03, 0x04, 0x05]);
+    assert_eq!(buffer.pointer, 5);
+
+    buffer.extend(&[0x06, 0x07, 0x08, 0x09]);
+    assert_eq!(buffer.bytes[0..5], [0x01, 0x02, 0x03, 0x04, 0x05]);
+    assert_eq!(buffer.pointer, 5);
+
+    buffer.extend(&[]);
+    assert_eq!(buffer.bytes[0..5], [0x01, 0x02, 0x03, 0x04, 0x05]);
+    assert_eq!(buffer.pointer, 5);
+
+    let buffer2 = buffer;
+    assert_eq!(buffer.bytes, buffer2.bytes);
+    assert_eq!(buffer.pointer, buffer2.pointer);
+
+    let mut buffer = Bytes::<1>::new();
+    buffer.push(0);
+    buffer.push(0);
+
+    buffer.extend(&[0, 0]);
+}
+
+#[test]
+fn test_pid_parsing() {
+    let test_cases = [
+        (0x01, Pid::ISO8208),
+        (0x06, Pid::RFC1144C),
+        (0x07, Pid::RFC1144U),
+        (0x08, Pid::SegFrag),
+        (0xc3, Pid::TEXNET),
+        (0xc4, Pid::LinkQuality),
+        (0xca, Pid::AppleTalk),
+        (0xcb, Pid::AppleTalkARP),
+        (0xcc, Pid::ARPAIP),
+        (0xcd, Pid::ARPAAR),
+        (0xce, Pid::FlexNet),
+        (0xcf, Pid::NETROM),
+        (0xf0, Pid::NoL3),
+        (0xff, Pid::EscChar),
+    ];
+
+    for (pid_byte, expected_pid) in test_cases {
+        let mut packet = vec![0; 190];
+
+        packet[0] = 0;
+        packet[1..8].copy_from_slice(&[1, 1, 1, 1, 1, 1, 1]);
+        packet[8..15].copy_from_slice(&[2, 2, 2, 2, 2, 2, 2]);
+        packet[15] = 0b10101010;
+        packet[16] = pid_byte;
+        packet[17..188].fill(0);
+        packet[188..190].copy_from_slice(&[0, 0]);
+
+        let result = Fx25Fields::parse(&packet);
+
+        assert_eq!(result.pid as u8, expected_pid as u8);
+    }
+}
+
+#[test]
+fn test_undefined_pid() {
+    let mut packet = vec![0; 190];
+
+    packet[0] = 0;
+    packet[1..8].copy_from_slice(&[1, 1, 1, 1, 1, 1, 1]);
+    packet[8..15].copy_from_slice(&[2, 2, 2, 2, 2, 2, 2]);
+    packet[15] = 0b10101010;
+    packet[16] = 0x00;
+    packet[17..188].fill(0);
+    packet[188..190].copy_from_slice(&[0, 0]);
+
+    let result = Fx25Fields::parse(&packet);
+
+    assert_eq!(result.pid as u8, Pid::NoL3 as u8);
+}
+
+#[test]
+fn test_packet_too_short() {
+    let short_packet = vec![0; 14];
+    let _ = Fx25Fields::parse(&short_packet);
+}
+
+fn create_test_bytes(correlation_tag: &[u8], data: &[u8]) -> [u8; 271] {
+    let mut bytes = [0u8; 271];
+    bytes[4..12].copy_from_slice(correlation_tag);
+    bytes[12..267].copy_from_slice(data);
+    return bytes;
+}
+
+#[test]
+fn test_invalid_correlation_tag() {
+    let invalid_tag = [0xFF; 8];
+    let data = [0; 255];
+    let bytes = create_test_bytes(&invalid_tag, &data);
+
+    let result = Packet::decode_fx25(bytes);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_invalid_crc() {
+    let valid_tag = (CorrelationTag::Tag09 as u64).to_le_bytes();
+    let valid_data = [0; 255];
+
+    let mut bytes = create_test_bytes(&valid_tag, &valid_data);
+
+    bytes[12] = 0;
+    bytes[13..20].copy_from_slice(&[1, 1, 1, 1, 1, 1, 1]);
+    bytes[20..27].copy_from_slice(&[2, 2, 2, 2, 2, 2, 2]);
+    bytes[27] = 0b10101010;
+    bytes[28] = 0x01;
+
+    let result = Packet::decode_fx25(bytes);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_sframe_creation() {
+    let test_cases = [
+        (0, false, Supervisory::RR, 0b00000001),
+        (7, true, Supervisory::RNR, 0b11110101),
+        (3, true, Supervisory::REJ, 0b01111001),
+        (5, false, Supervisory::SREJ, 0b10101101),
+    ];
+
+    for (recv_seq_num, poll_final, supervisory, expected_byte) in test_cases {
+        let control = Control::new_sframe(recv_seq_num, poll_final, supervisory);
+
+        assert_eq!(
+            control.to_byte().unwrap(),
+            expected_byte,
+            "Control byte mismatch"
+        );
+        match control {
+            Control::SFrame {
+                recv_seq_num: r,
+                poll_final: p,
+                supervisory: s,
+                byte: b,
+            } => {
+                assert_eq!(r, recv_seq_num, "Receive sequence number mismatch");
+                assert_eq!(p, poll_final, "Poll/Final bit mismatch");
+                assert_eq!(s, supervisory as u8, "Supervisory bits mismatch");
+            }
+            _ => panic!("Wrong Control variant returned"),
+        }
+    }
 }
 
 #[cfg(feature = "fuzz")]
@@ -507,30 +717,22 @@ mod fuzzing {
 
             let mut to_parse = actual_output.clone();
 
-            for i in (0..to_parse.len()).rev() {
-                if to_parse[i] == 0x7E {
-                    to_parse[i - 2] = 0x7E;
-                    to_parse[i - 1] = 0;
-                    to_parse[i] = 0;
-                    break;
-                }
-            }
+            to_parse[to_parse.len() - 3] = 0x7E;
+            to_parse[to_parse.len() - 2] = 0;
+            to_parse[to_parse.len() - 1] = 0;
 
             let parsed = ax25::frame::Ax25Frame::from_bytes(&to_parse[1..(to_parse.len())]);
             assert!(parsed.is_ok());
 
-            match parsed {
-                Ok(parsed) => {
-                    assert_eq!(dest_callsign, parsed.destination.callsign.as_bytes());
-                    assert_eq!(source_callsign, parsed.source.callsign.as_bytes());
+            let parsed = parsed.unwrap();
 
-                    let mut data_bytes = Bytes::<174>::new();
-                    data_bytes.extend(&data);
-                    data_bytes.push(0x7E);
-                    assert_eq!(Vec::from(data_bytes.bytes), parsed.to_bytes()[16..]);
-                }
-                Err(_) => {}
-            }
+            assert_eq!(dest_callsign, parsed.destination.callsign.as_bytes());
+            assert_eq!(source_callsign, parsed.source.callsign.as_bytes());
+
+            let mut data_bytes = Bytes::<174>::new();
+            data_bytes.extend(&data);
+            data_bytes.push(0x7E);
+            assert_eq!(Vec::from(data_bytes.bytes), parsed.to_bytes()[16..]);
         }
     }
 
