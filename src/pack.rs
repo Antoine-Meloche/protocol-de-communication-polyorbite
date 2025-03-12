@@ -95,12 +95,25 @@ impl Address {
     }
 }
 
+/// # Supervisory frame types for AX.25 S-frames
+///
+/// Defines the four possible supervisory frame types that can be used in AX.25 S-frames.
+/// These are used for flow control and error recovery functions.
+///
+/// The variants are represented as 2-bit values (00-11) in the control field.
 #[repr(u8)]
 #[derive(Clone, Copy)]
 pub enum Supervisory {
+    /// Receive Ready - Indicates ready to receive more frames and acknowledges frames up to N(R)-1
     RR = 0b00,
+
+    /// Receive Not Ready - Temporarily cannot accept additional I frames
     RNR = 0b01,
+
+    /// Reject - Requests retransmission of I frames starting from N(R)
     REJ = 0b10,
+
+    /// Selective Reject - Requests retransmission of only the specific I frame N(R)
     SREJ = 0b11,
 }
 
@@ -200,9 +213,9 @@ impl Control {
     /// ## Example
     /// Here is an example of a SFrame control field being created for a first packet in a communication which is final.
     /// ```
-    /// use comms::pack::Control;
+    /// use comms::pack::{Control, Supervisory};
     ///
-    /// let control = Control::new_sframe(1, true, 0);
+    /// let control = Control::new_sframe(1, true, Supervisory::RR);
     /// ```
     pub fn new_sframe(recv_seq_num: u8, poll_final: bool, supervisory: Supervisory) -> Self {
         assert!(recv_seq_num < 8); // The receive sequence number must not be more than 7
@@ -902,11 +915,10 @@ impl Packet {
 ///
 /// let frame_bytes = [0u8; 271]; // Received FX.25 frame
 ///
-/// if let Some(fields) = Fx25Fields::parse(&frame_bytes) {
-///     let source = fields.source_callsign;
-///     let dest = fields.dest_callsign;
-///     let data = fields.data;
-/// }
+/// let fields = Fx25Fields::parse(&frame_bytes);
+/// let source = fields.source_callsign;
+/// let dest = fields.dest_callsign;
+/// let data = fields.data;
 /// ```
 pub struct Fx25Fields {
     /// 7-byte array containing the source station's callsign and SSID
@@ -950,11 +962,10 @@ impl Fx25Fields {
     ///
     /// let frame_bytes = [0u8; 271]; // Received FX.25 frame
     ///
-    /// if let Some(fields) = Fx25Fields::parse(&frame_bytes) {
-    ///     let dest = fields.dest_callsign;
-    ///     let source = fields.source_callsign;
-    ///     let data = fields.data;
-    /// }
+    /// let fields = Fx25Fields::parse(&frame_bytes);
+    /// let dest = fields.dest_callsign;
+    /// let source = fields.source_callsign;
+    /// let data = fields.data;
     /// ```
     pub fn parse(mut packet: &[u8]) -> Self {
         if packet.len() < 15 {
