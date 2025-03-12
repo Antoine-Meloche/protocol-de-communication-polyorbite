@@ -13,16 +13,16 @@ export RUSTFLAGS="-Cinstrument-coverage"
 export LLVM_PROFILE_FILE="coverage-%p-%m.profraw"
 
 echo "=== Installing rust nightly"
-# rustup toolchain add nightly-x86_64-unknown-linux-gnu &> /dev/null
+rustup toolchain add nightly-x86_64-unknown-linux-gnu &> /dev/null
 
 echo "=== Installing llvm-tools ==="
-# rustup component add llvm-tools-preview &> /dev/null
+rustup component add llvm-tools-preview &> /dev/null
 
 echo "=== Installing llvm-cov... ==="
-# cargo install cargo-llvm-cov &> /dev/null
+cargo install cargo-llvm-cov &> /dev/null
 
 echo "=== Running coverage ==="
-cargo llvm-cov --all-features --html #&> /dev/null
+cargo llvm-cov --all-features --html &> /dev/null
 
 mkdir -p public
 mv target/llvm-cov/html/* public/.

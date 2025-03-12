@@ -499,7 +499,7 @@ fn test_sframe_creation() {
                 recv_seq_num: r,
                 poll_final: p,
                 supervisory: s,
-                byte: b,
+                byte: _,
             } => {
                 assert_eq!(r, recv_seq_num, "Receive sequence number mismatch");
                 assert_eq!(p, poll_final, "Poll/Final bit mismatch");
